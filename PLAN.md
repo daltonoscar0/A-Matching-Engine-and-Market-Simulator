@@ -740,6 +740,40 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   decision is the user's (see Blocked on you). Work continued to the
   phases that are needed whatever context length is chosen.
 
+- 2026-07-30 (tape reconciliation) DETERMINATION: ~/orderflow-lm and
+  github.com/daltonoscar0/tape ARE the same codebase. Evidence: local root
+  commit b2395b8 and remote fd8ac22 share author, message, and author
+  timestamp (2026-07-30T18:14:40Z) with blob-identical trees except a
+  CLAUDE.md->NOTES.md rename (same blob) and a dropped .claude/ rules file
+  - i.e. a sanitized re-push; tape then subtree-merged that tree under
+  pipeline/. They have DIVERGED since: the remote is 3 commits newer
+  (adds the LM/probing suite, the SPY train+probe run, README - through
+  2026-07-30T20:53Z) and is AUTHORITATIVE for the training/probing half,
+  which exists NOWHERE locally (~/orderflow-lm has zero .py files, no
+  train_spy, analysis/ empty; the local "miniGPT" repo is an unrelated
+  text-corpus demo). The local repo is authoritative for exactly one
+  thing: unique commit d8b15cc "SPEC: split-guard requirement for the
+  future ITCH ingest", absent from the remote (remote SPEC.md has no
+  dataset::enforce text). Flagged for the user: that split-guard SPEC
+  commit should be pushed/merged into tape or it will be lost; the local
+  repo has no git remote configured at all.
+  HARVEST DECISION (recorded here; ~/orderflow-lm is not pruned, nothing
+  deleted there this session):
+  - TAKE: the 5-tuple factored tokenizer (52-id vocab, level-index
+    PRICE_OFF), the fit/apply bin-freezing split (fit_core.hpp confined to
+    fit_main; tokenize cannot fit), the OFTK v2 binary token format + the
+    orderflow-factored-v2 manifest.json shape, and the minigpt training
+    loop (train_spy) - the last from the REMOTE tape repo, the only place
+    it exists.
+  - LEAVE: the probing suite (remote tape; interpretability, orthogonal to
+    generation - a legitimate Phase 4 question if the LM ever beats the
+    null).
+  - SUPERSEDE: tape's C++ book reconstruction. This repo's engine replays
+    23.8M and 109.7M real ITCH messages with zero rejects and exact
+    conservation; tape's is the one whose LOBSTER problems produced its
+    censoring finding. One book implementation, and it is this one - the
+    ITCH ingest drives THIS repo's Book.
+
 ## Blocked on you
 - (nothing) - resolved 2026-07-30:
   - LOBSTER samples: superseded. Real NASDAQ BX ITCH day landed in data/
@@ -954,3 +988,9 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   9-day split, per-symbol measurability, 2 scored facts + 4 demotions +
   null floor, done/not-done with external-vs-internal validation named).
   No LM result claimed; LM column explicitly nonexistent. Gates green.
+- 2026-07-30 Phase 3: tape reconciliation - determined ~/orderflow-lm ==
+  daltonoscar0/tape (sanitized re-push, subtree-merged under pipeline/,
+  diverged since; remote authoritative for the LM half, local holds one
+  unique SPEC split-guard commit d8b15cc the remote lacks). TAKE/LEAVE/
+  SUPERSEDE harvest decision recorded in Decisions; nothing deleted in
+  ~/orderflow-lm. Gates green.
