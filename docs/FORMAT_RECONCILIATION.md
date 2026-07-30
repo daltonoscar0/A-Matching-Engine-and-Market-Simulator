@@ -1,8 +1,14 @@
 # Format reconciliation: LOBSTER tokenizer vs NASDAQ BX ITCH 5.0
 
-Status: AUDIT ONLY (2026-07-30). No tokenizer code is changed by this
+Status: AUDIT (2026-07-30). No tokenizer code is changed by this
 document. The deliverable is the per-item scope verdict so the direction can
 be chosen deliberately, not discovered mid-implementation.
+
+**Update 2026-07-30: the `U` fork is RESOLVED — EXPAND to Delete+Add**
+(user's decision, recorded in PLAN.md Decisions with the replace-atomicity
+caveat and the post-hoc replace-atomicity-rate sanity check). Do not reopen;
+revisit `TYPE_REPLACE` with a six-field tuple only if replace-timing fidelity
+later matters for a specific probe.
 
 ## Why this exists
 
@@ -61,9 +67,9 @@ consume. Book state for PRICE_OFF comes from LOBSTER's orderbook file
 | ExecHidden (5) | `P` (non-cross trade, non-displayed) | both are executions that do not touch the visible book | **adapter bridges**: the exchange already SKIPS `P` (book-unaffected); to emit an ExecHidden token, surface the skip instead of dropping it. Optional. |
 | CrossTrade (6) | `Q` (cross trade) | auction / cross print | **adapter bridges**, but MOOT on BX: the panel days carry **zero** `Q` frames. |
 | Halt (7) | `H` (trading action) | halt/resume indicator; book-unaffected | **adapter bridges**: HALT/RESUME are specials, not tuples. The exchange currently SKIPS `H`; to tokenize halts, stop skipping and forward the action code. |
-| — | **`U` (replace)** | **no LOBSTER equivalent.** ITCH sends one message carrying `orig_ref` + `new_ref` + new size/price; LOBSTER represents the same economic act as two rows (Delete then Add) | **DESIGN FORK — see below.** |
+| — | **`U` (replace)** | **no LOBSTER equivalent.** ITCH sends one message carrying `orig_ref` + `new_ref` + new size/price; LOBSTER represents the same economic act as two rows (Delete then Add) | **RESOLVED 2026-07-30: expand to Delete+Add — see below.** |
 
-### The `U` fork (a representation choice with a distributional consequence)
+### The `U` fork (a representation choice with a distributional consequence) — RESOLVED 2026-07-30: EXPAND to Delete+Add
 
 ITCH `U` has no LOBSTER analogue and no token slot, and expanding it changes
 **what the model can express**, not just how it is encoded, so the trade-off
@@ -72,8 +78,12 @@ is quantified here before a recommendation.
 **How much `U` is there? (measured, replay_itch on 3 TRAIN days.)** `U` is
 **5.9% of book messages** pooled (4.6% on the calm 2019-01-30, 8.7% on the
 volatile 2019-05-30, 6.5% on 2019-12-30). Note this is about **half** the
-"~12%" figure quoted in the task; the 12% instead matches the *post-expansion*
-number below, which is the likelier source of that estimate.
+"~12%" figure quoted in the task. Provenance corrected 2026-07-30: that ~12%
+was the **synthetic generator's message mix** (U 12% in BENCH.md's 2026-07-27
+synthetic-stream row) — a fact about our generator's hardcoded ratios, never
+about real BX; this doc's earlier guess that it matched the post-expansion
+number below was wrong. 5.9% (measured, replay_itch, 3 TRAIN days) is the
+real-data figure.
 
 | day | book msgs | `U` | `U` % | D/A-pair % of expanded event stream |
 |---|---|---|---|---|
@@ -128,11 +138,10 @@ memory or volatility clustering. Caveat to log if this is chosen: the model
 must **learn** replace-atomicity (a `DT_ZERO` delete followed by a `DT_ZERO`
 same-side add), so post-hoc measure how often it emits that pattern vs.
 reality; if replace-timing fidelity ever turns out to matter for a specific
-probe, revisit `TYPE_REPLACE` with an explicit six-field tuple then. Decision
-is the user's; not implemented here.
-
-Either way this is an **adapter/representation choice**, not a parsing
-obstacle. Recommend expansion; flagged here so it is chosen, not defaulted.
+probe, revisit `TYPE_REPLACE` with an explicit six-field tuple then.
+**Decided by the user 2026-07-30: EXPAND** (PLAN.md Decisions); the caveat
+above is logged there, and the replace-atomicity rate is on the amended
+pre-registration's sanity-check list, explicitly not a scoring criterion.
 
 ## Per-item audit (the five things asked about)
 
@@ -210,7 +219,7 @@ No cross-day boundaries either way.
 | SIZE scheme | **unchanged** |
 | SIZE bin edges | **refit on BX TRAIN** (retraining decision) |
 | TYPE vocab for A/X/D/E/C/P/Q/H | **adapter bridges** (no new token) |
-| TYPE vocab for `U` | **design fork**: expand to Delete+Add (recommended, no vocab change) OR add `TYPE_REPLACE` (vocab change + retrain) |
+| TYPE vocab for `U` | **RESOLVED 2026-07-30**: expand to Delete+Add (no vocab change; PLAN.md Decisions) |
 | Book-state source for PRICE_OFF | **new adapter**: feed exchange reconstruction instead of a LOBSTER orderbook file |
 | ITCH binary parse -> `ApproxEvent` | **new code** (parser/adapter), NOT a tokenizer rewrite |
 | Any model already trained on LOBSTER-SPY | **does not transfer**: different venue, refit bins, single-ticker SPY corpus — a BX corpus is a fresh training run |

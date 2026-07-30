@@ -72,10 +72,9 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   2026-07-30). The loop is engine-complete; what remains before a real LM
   column is the tokenizer's LOBSTER->ITCH change and the token<->action shim,
   both of which are the user's next direction to pick (see below).
-- Next 3 tasks (all gated on a user decision, not engine work):
-  1. Pick the tokenizer direction from docs/FORMAT_RECONCILIATION.md - in
-     particular the 'U' fork (expand to Delete+Add, recommended, vs a new
-     TYPE_REPLACE token). Then build the ITCH-driving adapter in
+- Next 3 tasks:
+  1. [U fork RESOLVED 2026-07-30: EXPAND to Delete+Add - see Decisions.]
+     Build the ITCH-driving adapter in
      orderflow-lm: parse BX -> drive reconstruction -> emit
      [TYPE][SIDE][PRICE_OFF][SIZE][DT]. Must consume src/dataset.hpp and
      call dataset::enforce() (split guard, still unenforced on that side
@@ -699,6 +698,33 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
      bounce sign - never scoring criteria; gross basic-validity failures
      noted separately; passing earns nothing.
 
+- 2026-07-30 (U fork DECIDED, user's call) EXPAND 'U' to Delete+Add in the
+  ITCH-driving adapter. The tuple-structure argument settles it: a replace
+  carries TWO locations (the original order and the new price) against the
+  tuple's ONE PRICE_OFF slot, so TYPE_REPLACE would force a sixth field -
+  a structural tuple change - for a distinction none of the scored facts
+  need. Standing caveat carried over from FORMAT_RECONCILIATION.md, logged
+  here so it is not rediscovered: the model must LEARN replace-atomicity
+  (a DT_ZERO delete followed by a DT_ZERO same-side add) - the adapter
+  CANNOT enforce it, because both halves decode to plain D/A with no
+  marker distinguishing them from standalone events; each half is
+  individually valid so the book stays correct, and the exposure is
+  confined to cancel/replace timing, a sanity-check quantity. Post-hoc
+  measurement REQUIRED: the REPLACE-ATOMICITY RATE - how often the LM
+  emits the paired pattern versus reality. This measurement is hereby
+  ADDED to the sanity-check list of the pre-registration as amended (the
+  2026-07-30 AMENDMENT Decision above, point 9), explicitly NOT a scoring
+  criterion: it can flag a basic-validity failure, it earns the LM
+  nothing. Provenance correction, so nobody re-derives it: the "~12% U"
+  figure quoted in an earlier task and provisionally attributed (in the
+  2026-07-30 "U fork, quantified" Decision and FORMAT_RECONCILIATION.md)
+  to the post-expansion pair-half share was actually the SYNTHETIC
+  generator's message mix (U 12% in the BENCH.md 2026-07-27 synthetic
+  row) - a fact about our generator's hardcoded ratios, never about real
+  BX. The measured real-data figure stands: U = 5.9% of book messages
+  pooled over 3 TRAIN days (4.6-8.7% by day). FORMAT_RECONCILIATION.md
+  updated to mark the fork RESOLVED and carry the corrected provenance.
+
 ## Blocked on you
 - (nothing) - resolved 2026-07-30:
   - LOBSTER samples: superseded. Real NASDAQ BX ITCH day landed in data/
@@ -885,3 +911,19 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   milestone met (50k-step loop, zero invariant violations; all four reject
   categories fire; rejection bit-identical-total). Gates green (0 warnings /
   ctest / 1M fuzz). Each step committed separately.
+- 2026-07-30 Methodology hardening, 4 steps, each committed separately,
+  gates green throughout. Step 1: vartop10 n-confound test - NOT
+  confounded (null n_tick SMALLER than real, 0.71 pooled; rho -0.08, R^2
+  0.02 across 140 symbol-days; 1c n-matching not triggered; evidence
+  out/multiday/n_confound_analysis.txt, RESULTS.md row). Step 2:
+  user RATIFIED tick-time vol-clustering persistence as the second scored
+  fact (both lags 10+100 scored, lag-10 no-separation prediction on
+  record, lag-100 floor 0.015 - see Decision). Step 3: pre-registration
+  AMENDED (names c06df11): [q10,q90] quantile envelope replaces min-max,
+  LM seeds fixed at exactly 7, three-way PASS/FAIL/INCONCLUSIVE partition
+  closes the verdict gap; operative rule restated in full in the
+  amendment Decision. Step 4: U fork RESOLVED (user): EXPAND to
+  Delete+Add; replace-atomicity rate added to the sanity-check list;
+  FORMAT_RECONCILIATION.md marked resolved; ~12% provenance corrected
+  (source was the synthetic generator's U mix in BENCH.md 2026-07-27, not
+  real data; real figure 5.9%).
