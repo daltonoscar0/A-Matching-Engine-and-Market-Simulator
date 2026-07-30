@@ -9,14 +9,15 @@ endif()
 set(CMAKE_CXX_FLAGS_RELEASE "-O2 -g")
 add_compile_options(-Wall -Wextra)
 
-add_library(exchange_core src/itch.cpp src/book.cpp)
+add_library(exchange_core src/itch.cpp src/book.cpp src/adapter.cpp)
 target_include_directories(exchange_core PUBLIC src)
 
 # Tests (Catch2 v2.13.10 vendored as a single header in third_party/)
 add_executable(tests
-  tests/main.cpp tests/test_book.cpp tests/test_bookset.cpp
-  tests/test_codec.cpp tests/test_cst.cpp tests/test_dataset.cpp
-  tests/test_fuzz.cpp tests/test_itch_replay.cpp tests/test_match.cpp)
+  tests/main.cpp tests/test_adapter.cpp tests/test_book.cpp
+  tests/test_bookset.cpp tests/test_codec.cpp tests/test_cst.cpp
+  tests/test_dataset.cpp tests/test_fuzz.cpp tests/test_itch_replay.cpp
+  tests/test_match.cpp)
 target_link_libraries(tests PRIVATE exchange_core)
 
 enable_testing()
@@ -31,6 +32,8 @@ add_executable(bench_tail bench/tail.cpp)
 target_link_libraries(bench_tail PRIVATE exchange_core)
 add_executable(bench_match bench/match.cpp)
 target_link_libraries(bench_match PRIVATE exchange_core)
+add_executable(bench_adapter bench/adapter.cpp)
+target_link_libraries(bench_adapter PRIVATE exchange_core)
 add_executable(replay_itch bench/replay_itch.cpp)
 target_link_libraries(replay_itch PRIVATE exchange_core)
 

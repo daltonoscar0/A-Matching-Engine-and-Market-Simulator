@@ -18,9 +18,22 @@ to be byte-identical against, so the correctness bar became internal:
 a correct book applying genuine ITCH produces zero rejects (see Decisions).
 
 ## Phase 2: Generative agent loop (weeks 4-6)
-- [ ] Adapter: orderflow-lm emits messages -> engine executes -> state feeds back
-- [ ] Sampling controls (temperature, top-k) + rejection of malformed messages
-Milestone: closed-loop simulation runs N steps without invariant violations.
+- [x] Adapter: orderflow-lm emits messages -> engine executes -> state feeds
+      back. src/adapter.{hpp,cpp} (2026-07-30): validate -> route
+      (match_submit for marketable, add for resting, remove for cancel) ->
+      top-N BookView feedback. Rejections classified + counted:
+      Unparseable / UnknownReference / InvariantViolation / EconomicallyAbsurd.
+- [x] Sampling controls (temperature, top-k) + rejection of malformed
+      messages. sample_index() (temperature + top-k over model logits,
+      seeded RNG owned by the adapter so the engine stays deterministic);
+      malformed-message rejection is the validation front-end above.
+Milestone: MET 2026-07-30 - tests/test_adapter.cpp runs 50k generated steps
+with zero invariant violations (audit clean throughout, invariants_fast
+after every action applied OR rejected), every rejection category fires on a
+hand-built bad action, rejection is bit-identical-total, and a valid stream
+routes to the same book as a direct construction. bench_adapter: 3.38M
+steps/sec incl. feedback construction (BENCH.md, not comparable to
+replay/match).
 
 ## Phase 3: Stylized-fact validation (weeks 7-9)
 - [x] "Real" column: tools/stylized computes fat tails, aggregational
@@ -55,18 +68,24 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
 - [ ] Almgren-Chriss baseline; RL or policy-gradient agent inside the sim
 
 ## Status
-- Current phase: 2 (engine side ready: match() landed 2026-07-30; the
-  adapter to orderflow-lm is the remaining Phase 2 structural work).
-- Next 3 tasks:
-  1. Phase 2 adapter: orderflow-lm emits messages -> match_submit executes
-     -> emitted stream feeds back. The engine side exists (src/match.hpp);
-     what remains is the LM-facing loop and message validation.
-  2. Sampling controls (temperature, top-k) + rejection of malformed
-     messages at the adapter boundary.
-  3. (done 2026-07-30, reshaped by the dataset split) Multi-day baseline
-     computed on the 7 TRAIN+VAL days only; TEST (20181228, 20200130) is
-     sealed behind --i-am-running-the-final-comparison until the headline
-     real-vs-LM-vs-null table runs once.
+- Current phase: 2 CLOSED on the engine side (match() + adapter both landed
+  2026-07-30). The loop is engine-complete; what remains before a real LM
+  column is the tokenizer's LOBSTER->ITCH change and the token<->action shim,
+  both of which are the user's next direction to pick (see below).
+- Next 3 tasks (all gated on a user decision, not engine work):
+  1. Pick the tokenizer direction from docs/FORMAT_RECONCILIATION.md - in
+     particular the 'U' fork (expand to Delete+Add, recommended, vs a new
+     TYPE_REPLACE token). Then build the ITCH-driving adapter in
+     orderflow-lm: parse BX -> drive reconstruction -> emit
+     [TYPE][SIDE][PRICE_OFF][SIZE][DT]. Must consume src/dataset.hpp and
+     call dataset::enforce() (split guard, still unenforced on that side
+     because no loader exists yet).
+  2. Refit the frozen SIZE/DT bins on BX TRAIN and re-measure the PRICE_OFF
+     window / "-1-only" assumption on BX; a BX-trained tokenizer+model is a
+     from-scratch run (LOBSTER-SPY weights do not transfer).
+  3. Write the token<->EmittedAction shim above src/adapter.hpp so a trained
+     model can drive the closed loop; then the Phase 3 real-vs-LM-vs-null
+     table (null column already done; TEST still sealed).
 
 ## Decisions
 - 2026-07-27 Catch2 v2.13.10 vendored (third_party/catch.hpp), the one
@@ -393,6 +412,31 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   run. NOT starting the tokenizer change this session; the audit is the
   deliverable, direction is the user's to pick.
 
+- 2026-07-30 (adapter) State-feedback shape: the model conditions on the
+  top-N aggregated levels per side (price + total shares) plus best bid/ask
+  and spread, default N=11. Reasoning logged because it determines what the
+  model can condition on: N=11 covers the tokenizer's PRICE_OFF window
+  (occupied levels 0..+10 on the event side, docs/FORMAT_RECONCILIATION.md),
+  so the model's conditioning state and its emittable price range align.
+  Full depth (BX peaks ~87 levels) would waste per-step work; a scalar
+  spread/imbalance summary would under-determine PRICE_OFF. Configurable via
+  AdapterConfig.feedback_levels.
+- 2026-07-30 (adapter) The boundary is at the concrete order-action level
+  (absolute price/side/size), NOT the factored-token level: the token<->price
+  decode and the 'U' representation fork are still-open tokenizer decisions
+  (FORMAT_RECONCILIATION), and the engine loop must not bake them in. A thin
+  token<->action shim will sit above this once the tokenizer direction is
+  chosen.
+- 2026-07-30 (adapter) A Cancel's `shares` field is unused - it removes the
+  FIFO-head resting order at (side, price) in full - so only Limit/Market
+  require a positive size; a zero-size Limit/Market is Unparseable. Crossing
+  limits are NOT rejected: a limit priced through the opposite touch routes
+  to match() (marketable), only away-limits rest, so WouldCross never fires
+  from the adapter. Economic-absurdity bounds (size > 1M shares, price >
+  $10k absolute, or > 50% off the opposite touch) are applied BEFORE the
+  engine, since the engine would accept them; thresholds are AdapterConfig
+  fields and are training diagnostics, not correctness limits.
+
 ## Blocked on you
 - (nothing) - resolved 2026-07-30:
   - LOBSTER samples: superseded. Real NASDAQ BX ITCH day landed in data/
@@ -564,3 +608,18 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   uniform-vs-symbol-dependent classification recorded. Evidence:
   out/multiday/persym_analysis.txt. Gates green (0 warnings / ctest / 1M
   fuzz).
+- 2026-07-30 CST verdict surfaced + Steps 1-3. Step 0: printed the null
+  section; CST flow-sign slope -0.018 (near zero) vs real -0.592 - the
+  pre-registered rule fires on the "materially flatter" branch, so the slope
+  DISCRIMINATES and stays a legitimate scoring target; work continues. Step 1
+  (split guard, trainer side): audited orderflow-lm; no ITCH loader exists,
+  all file selection is explicit-argv/manifest LOBSTER paths, so a BX TEST
+  day is unreachable - requirement recorded in PLAN Decisions + SPEC, one
+  source of truth = src/dataset.hpp. Step 2 (format reconciliation):
+  docs/FORMAT_RECONCILIATION.md - tokenizer SURVIVES with no vocab redesign
+  (PRICE_OFF already level-indexed, refs already dropped); bounded scope =
+  ITCH-driving adapter + SIZE/DT bin refit + the 'U' fork; audit only.
+  Step 3 (Phase 2 adapter): src/adapter.{hpp,cpp} + bench + test_adapter;
+  milestone met (50k-step loop, zero invariant violations; all four reject
+  categories fire; rejection bit-identical-total). Gates green (0 warnings /
+  ctest / 1M fuzz). Each step committed separately.
