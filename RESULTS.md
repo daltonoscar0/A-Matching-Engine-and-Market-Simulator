@@ -90,6 +90,56 @@ its numbers differ slightly from the v2 table above. Values are cross-day
 | Flow-sign ACF(1), 1ms collapse | 0.277 [0.160 .. 0.331] | -0.009 [-0.017 .. 0.000] | YES - the null is exactly zero (i.i.d. signs by construction); every real day is far above it. |
 | Flow-sign log-log slope, lags 1-100 | -0.592 [-0.793 .. -0.432] | -0.018 [-0.229 .. 0.003] | YES - the decisive one, per the pre-registered rule: the null lands near zero, not near -0.6; its seed spread is estimator noise (fitting log of ~N(0,1/n) values) and does not overlap the real range. Slope is a legitimate scoring target; null floor = slope >= -0.23, ACF(1) ~= 0. |
 
+## Stylized facts - null column CORRECTION (measurability rule applied, 2026-07-30)
+
+SUPERSEDES the two "Volatility clustering" rows of the null column above.
+Those rows compared a MEASURABILITY-FILTERED real column against an UNFILTERED
+null column - not a comparison. Here the identical vartop10 rule (UNMEASURED
+when vartop10_absr_tick >= 0.5) and cutoff are applied to BOTH sides, on the
+13-symbol CST panel, tick time. Per-symbol PRESENT medians then across symbols
+(the v3 structure). Evidence: out/cstnull/seed*/ regenerated through the
+current stylized (the earlier null CSVs predated the vartop10 column); scripts
+in scratchpad, not repo-worthy.
+
+**The predicted pathology did NOT occur, and its opposite did.** The worry was
+that the null's kurtosis overshoot (246 vs 163) meant its mid flickers more
+than reality, so most null symbol-days would come back UNMEASURED. Measured:
+null is *less* variance-concentrated than the real book - null vartop10 median
+0.18 vs real 0.38, null UNMEASURED 15/91 (16%) vs real 31/75 (41%). Finding
+about the null: its continuous Poisson placement fills the book more densely
+than a real thin BX venue, so its mid moves in many moderate steps, not a few
+stale-touch flaps. The kurtosis overshoot is a fatter *body* of moderate
+moves, not giant jumps - which is exactly why vartop10 is LOWER, not higher.
+Measurability sensitivity (real / null P/A/U): cutoff 0.3 = 33/0/42 / 56/3/32;
+0.5 = 44/0/31 / 70/6/15; 0.7 = 52/1/22 / 78/8/5.
+
+Measurable-only (PRESENT) tick ACF(|r|), cross-symbol median [range], real vs
+null, cutoff 0.5:
+
+| lag | real (panel) | CST null | separation |
+|---|---|---|---|
+| 10 | 0.154 [0.051 .. 0.316] (12 sym) | 0.044 [0.014 .. 0.096] (13 sym) | **OVERLAP** - only 9/12 real symbols exceed the null max; 8/13 null symbols sit below the real min. The lag-10 LEVEL does not cleanly discriminate per symbol. |
+| 50 | 0.074 [0.015 .. 0.199] | 0.004 [-0.002 .. 0.017] | near-disjoint (10/12 real > null max; 12/13 null < real min) |
+| 100 | 0.050 [0.015 .. 0.160] | 0.002 [-0.005 .. 0.007] | **DISJOINT** - 12/12 real symbols >= 0.015, 13/13 null symbols <= 0.007. No overlap. |
+
+**Verdict - mixed, and reported as mixed rather than forced into the
+pre-registered binary.** The original null table's "disjoint at both lags"
+claim is FALSIFIED at lag 10: on measurable-only per-symbol data the lag-10
+level ranges overlap. What survives, cleanly, is PERSISTENCE: every real
+PRESENT symbol keeps positive tick ACF(|r|) out to lag 100 while every null
+symbol has decayed to ~0 by lag 50 - the 12/12-vs-13/13 separation at lag 100
+is complete. This is the textbook volatility-clustering signature (slow ACF
+decay), and lags 50/100 were part of the pre-specified clustering statistic
+(the v3 table), NOT a fact hunted after the fact. But because the outcome is
+NOT the clean "disjoint" case the pre-registered rule anticipated - it
+overlaps at the lag the original claim led with - the decision to adopt
+PERSISTENCE (rather than the lag-10 level) as the volatility-clustering
+scoring statistic is deferred to the user, per the rule's "log it and let me
+decide." Not adopted unilaterally this session, and NO third fact was hunted
+to replace it. Net for Step 3 pre-registration: flow-sign memory remains the
+unambiguous discriminator; volatility-clustering-as-persistence is a
+candidate second discriminator pending that ratification.
+
 ## Stylized facts - per-symbol structure (v3, 2026-07-30)
 
 Supersedes the v2 pooled-median table as the headline structure (v2 stays,
