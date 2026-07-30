@@ -83,5 +83,20 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   network is locked to package registries). Drop the message + orderbook CSVs
   into project knowledge or the repo.
 - ITCH 5.0 PDF excerpt for spec diff (see Decisions).
+- 2026-07-30 Phase A blocked: LOBSTER sample needs manual download.
+  lobsterdata.com is now a JS app; the old direct sample zip URLs
+  (/info/sample/LOBSTER_SampleFile_*.zip) return the app shell, and the app's
+  own bundle shows sample downloads are gated behind an email + purchase-proof
+  request flow ("We verify purchase proof and send a time-limited download
+  link"). Not freely fetchable; nothing on local disk either. Drop
+  ..._message_N.csv + ..._orderbook_N.csv into data/ and Phase A can proceed.
 
 ## RESULTS log -> RESULTS.md, benchmarks -> BENCH.md
+
+## Session log
+- 2026-07-30 Setup: extracted phase-1 archive, git init, tagged
+  phase1-baseline. Gates green on Apple M4 (0 warnings / ctest pass / 1M fuzz
+  pass). Local bench baseline appended to BENCH.md (6.27M msgs/sec,
+  p50 83ns, p99 1000ns, p99.9 1583ns, max 13.75ms).
+- 2026-07-30 Phase A: blocked, LOBSTER samples no longer freely fetchable
+  (see Blocked). Skipped, no code written.
