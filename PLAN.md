@@ -344,6 +344,31 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   names unmeasurable for tick clustering). A model matching pooled medians
   while wrong per-symbol must fail, and now can.
 
+- 2026-07-30 (split guard, trainer side) Audited ~/orderflow-lm end to end
+  for how it selects input files. Findings: EVERY file is chosen by an
+  explicit CLI path argument (tokenize_main/fit_main/validate_book/
+  book_source_compare all take positional <messages.csv> <orderbook.csv>)
+  or pinned in data/tokens/manifest.json (LOBSTER paths only). The one
+  enumeration is scripts/fetch_lobster_sample.sh, hardcoded to LOBSTER
+  2012-06-21 AAPL/MSFT/SPY. There is NO glob over a data directory, NO
+  hardcoded day list in code, and - the load-bearing fact - NO ITCH/BX
+  data-loading code of any kind: data/itch/ holds only .gitkeep, the parser
+  is LOBSTER CSV, and nothing in the repo can open a .BX_ITCH_50 file. The
+  "split" tokens in that repo are the tokenizer's chronological train/eval
+  time split within one file, unrelated to our TRAIN/VAL/TEST day split.
+  Conclusion: a BX TEST day is currently unreachable from orderflow-lm
+  because BX data is unreachable, period - there is no bypass to close
+  because there is no loader. Per the standing rule (don't invent a fix for
+  code that doesn't exist), the requirement is RECORDED instead: when the
+  ITCH ingest is written (SPEC Phase 1 "then NASDAQ ITCH 5.0"), it MUST
+  obtain its day list through this repo's src/dataset.hpp - which is
+  header-only and stdlib-only, so orderflow-lm can #include it directly (a
+  symlink or a git submodule of exchange, NOT a transcribed copy that can
+  drift) - and call dataset::enforce() before opening any day, exactly as
+  tools/stylized etc. do. One source of truth: src/dataset.hpp. A matching
+  note was added to orderflow-lm/SPEC.md so the requirement lives in that
+  repo's source of truth too.
+
 ## Blocked on you
 - (nothing) - resolved 2026-07-30:
   - LOBSTER samples: superseded. Real NASDAQ BX ITCH day landed in data/
