@@ -80,6 +80,10 @@ public:
         return !bids_.empty() && !asks_.empty() && best_bid() >= best_ask();
     }
     size_t   open_orders()   const { return orders_.size(); }
+    // Diagnostic: hash-table bucket count of the order pool (rehash tracking).
+    size_t   order_buckets() const { return orders_.bucket_count(); }
+    // Pre-size the order pool to avoid rehashes while it grows to `expected`.
+    void     reserve(size_t expected) { orders_.reserve(expected); }
     uint64_t shares_added()    const { return shares_added_; }
     uint64_t shares_executed() const { return shares_executed_; }
     uint64_t shares_canceled() const { return shares_canceled_; }

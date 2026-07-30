@@ -32,9 +32,9 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   1. LOBSTER ingestion: parser from LOBSTER message CSV -> itch::Message
      stream; replay a real day, verify book state against the LOBSTER
      orderbook file at every row (the "byte-identical" milestone), re-bench.
-  2. Latency tail: p99.9=3.1us / max=9.2ms spikes - pre-reserve
-     unordered_map buckets, then try a slab allocator for Order/Level;
-     re-bench and add p99.9 column to BENCH.md.
+  2. [x] Latency tail: DONE 2026-07-30 - max was order-pool rehash, fixed
+     with Book::reserve; slab allocator not justified by measurement
+     (see Decisions + RESULTS.md).
   3. Multi-instrument dispatch: route on stock_locate to per-instrument
      books (real ITCH interleaves symbols; current bench is single-book).
 
@@ -77,6 +77,19 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   messages are valid by construction; fuzzer replays the same stream into an
   independent Book through the full encode->decode->apply pipeline and
   cross-checks final state against the shadow.
+- 2026-07-30 Latency-tail attribution done with a dedicated tool
+  (bench/tail.cpp) rather than guessing: per-message timing + order-pool
+  bucket-count tracking, spikes annotated with type/pool-size/rehash flag and
+  bucketed per 500k-message window to separate size-correlated causes from
+  uniform preemption. Tool kept in-repo so the measurement is reproducible.
+- 2026-07-30 Tail fix = Book::reserve(n) (pre-size the order pool's hash
+  buckets), called by the bench with 1<<20. NOT a reserve in Book's
+  constructor: Phase C runs many books per process and a megabucket table per
+  instrument would be the wrong default. Callers that know their depth opt in.
+- 2026-07-30 Slab/freelist allocator for Order/Level NOT built: measurement
+  (RESULTS.md 2026-07-30) shows it could only chase the residual ~100us
+  worst-case allocator noise (~10 messages in 5M) and cannot move p99.9,
+  which is ordinary deep-book map work plus clock overhead.
 
 ## Blocked on you
 - LOBSTER sample files (lobsterdata.com download needs a browser; container
@@ -100,3 +113,6 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   p50 83ns, p99 1000ns, p99.9 1583ns, max 13.75ms).
 - 2026-07-30 Phase A: blocked, LOBSTER samples no longer freely fetchable
   (see Blocked). Skipped, no code written.
+- 2026-07-30 Phase B: built bench_tail, attributed max latency to order-pool
+  rehash (RESULTS.md), fixed with Book::reserve; max 13.75ms -> 22.4us,
+  p50/p99/p99.9 unchanged. Gates green (0 warnings / ctest / 1M fuzz).

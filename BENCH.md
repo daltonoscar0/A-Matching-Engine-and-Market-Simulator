@@ -17,3 +17,4 @@ each sample), throughput from a separate untimed-per-message pass, best of 3.
 | date | commit | stream | msgs/sec | p50 | p99 | p99.9 | max | notes |
 |---|---|---|---|---|---|---|---|---|
 | 2026-07-30 | phase1-baseline | synth 5M seed 42 | 6.27M | 83ns | 1000ns | 1583ns | 13.75ms | Local baseline before any changes. steady_clock on this machine ticks at ~41.7ns, so sub-100ns percentiles are quantized (83ns = 2 ticks). max spike is a one-off; cause investigated in Phase B. |
+| 2026-07-30 | phase B | synth 5M seed 42 | 6.06M | 83ns | 1000ns | 1541ns | 22.4us | Order pool pre-reserved (1M buckets) after bench_tail attributed max to unordered_map rehash (RESULTS.md 2026-07-30). max 13.75ms -> 22.4us; p50/p99/p99.9 unchanged - rehash never touched them. Throughput 6.06M vs 6.27M baseline is within run-to-run spread (passes ranged 5.61-6.27M), not a regression claim. Residual max is rare allocator/OS noise, ~top-10-in-5M territory. |

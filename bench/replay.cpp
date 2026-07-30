@@ -47,6 +47,7 @@ int main(int argc, char** argv) {
     size_t n_msgs = 0;
     for (int r = 0; r < repeat; ++r) {
         lob::Book book;
+        book.reserve(1 << 20);  // avoid order-pool rehash spikes (RESULTS.md 2026-07-30)
         itch::FrameReader rd{wire.data(), wire.size()};
         size_t n = 0, rejected = 0;
         auto t0 = Clock::now();
@@ -74,6 +75,7 @@ int main(int argc, char** argv) {
     lat_ns.reserve(n_msgs);
     {
         lob::Book book;
+        book.reserve(1 << 20);
         itch::FrameReader rd{wire.data(), wire.size()};
         // Manual framing so the timed region is exactly decode+apply.
         while (rd.pos < rd.size) {
