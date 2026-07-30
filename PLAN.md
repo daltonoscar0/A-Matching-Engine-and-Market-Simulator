@@ -545,6 +545,48 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   with a 6-field tuple only if replace-timing fidelity later matters for a
   probe. Direction is the user's; not implemented.
 
+- 2026-07-30 (Step 2, ratification) TICK-TIME VOLATILITY-CLUSTERING
+  PERSISTENCE is RATIFIED by the user as the SECOND SCORED FACT of the
+  headline comparison, upgrading it from the conditional status in the
+  2026-07-30 pre-registration (c). Gate check first: the ratification was
+  explicitly conditioned on the vartop10 sample-size confound resolving
+  (RESULTS.md 2026-07-30 "Is vartop10 confounded by sample size?"), and it
+  resolved on branch 1 - no n gap (null n_tick is SMALLER than real, 0.71
+  pooled), no n dependence of vartop10 (rho -0.08, R^2 0.02) - so the
+  lag-100 disjointness is a fact about book dynamics, not arithmetic, and
+  ratification proceeds. Conditions of record, imposed so that the
+  post-hoc selection of the load-bearing lag is VISIBLE rather than
+  laundered:
+  (2a) BOTH lag 10 and lag 100 of tick ACF(|r|) are SCORED per measurable
+  symbol; lag 50 is computed and reported unscored. Lag 100 alone is not
+  the fact.
+  (2b) Pre-registered PREDICTION, recorded before any LM output exists:
+  "lag 10 is expected NOT to separate LM from null, on the basis of the
+  CST comparison where real and null lag-10 ranges overlapped; lag 100 is
+  expected to separate. If the LM separates at lag 10, that is a finding
+  beyond what the null comparison predicted and must be reported as such."
+  This makes the outcome-dependence of the original selection part of the
+  record, and gives the fact something it can fail at.
+  (2c) Stated plainly: lags 50/100 were in the pre-specified clustering
+  statistic from the v2 table onward - they were not invented after the
+  fact - and what changed post-hoc was only WHICH lag is treated as
+  load-bearing. Both halves of that sentence matter: the statistic was
+  pre-specified, and the emphasis within it was outcome-dependent.
+  Aggregation into the fact-level verdict (implementation call, Claude's,
+  logged for veto): the persistence fact's PASS rests on the lag-100 beat
+  count (the lag the null comparison predicts separates), with the lag-10
+  beat count reported alongside and interpreted via 2b - lag-10
+  separation, if it occurs, is a beyond-prediction finding, and lag-10
+  non-separation is the predicted outcome, not a failure. Requiring a
+  lag-10 beat for the pass would contradict 2b (the fact would be
+  pre-registered as expected to fail); scoring lag 100 alone would hide
+  the selection 2a exists to expose. Absolute floor for the lag-100 beat,
+  added on the same reasoning as the flow-memory floors (an envelope near
+  zero must not be beatable by noise): tick ACF(|r|) lag-100 >= 0.015,
+  the minimum across all 12 real PRESENT panel symbols in the CST
+  comparison (RESULTS.md measurable-only table; null max was 0.007).
+  Set before any LM output exists.
+
 ## Blocked on you
 - (nothing) - resolved 2026-07-30:
   - LOBSTER samples: superseded. Real NASDAQ BX ITCH day landed in data/
