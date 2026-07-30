@@ -35,8 +35,9 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   2. [x] Latency tail: DONE 2026-07-30 - max was order-pool rehash, fixed
      with Book::reserve; slab allocator not justified by measurement
      (see Decisions + RESULTS.md).
-  3. Multi-instrument dispatch: route on stock_locate to per-instrument
-     books (real ITCH interleaves symbols; current bench is single-book).
+  3. [x] Multi-instrument dispatch: DONE 2026-07-30 - BookSet routes on
+     stock_locate, fuzzer covers 8 interleaved symbols, single-symbol path
+     unregressed (BENCH.md phase C rows).
 
 ## Decisions
 - 2026-07-27 Catch2 v2.13.10 vendored as the single allowed dependency
@@ -90,6 +91,20 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   (RESULTS.md 2026-07-30) shows it could only chase the residual ~100us
   worst-case allocator noise (~10 messages in 5M) and cannot move p99.9,
   which is ordinary deep-book map work plus clock overhead.
+- 2026-07-30 BookSet routing = vector<unique_ptr<Book>> indexed directly by
+  stock_locate (16-bit key, worst case 512KB of pointers): O(1), no hash, no
+  iterator invalidation. Books created on first touch. Single-book path
+  (feed.hpp apply on Book&) untouched; BookSet layers on top of it.
+- 2026-07-30 Multi-symbol synth: per-symbol Generators interleaved by a
+  separate pick-rng, one locate each, order refs globally unique via
+  per-symbol ref_base ((i+1)<<40, clear of the 0xDEAD... unknown-id range).
+  Unique refs are what make routing bugs fuzzable: a message applied to the
+  wrong book hits UnknownId/DuplicateId instead of silently succeeding.
+  Config defaults chosen so single-symbol output stays byte-identical to
+  pre-change streams (verified by md5 on the seed-42 5M file).
+- 2026-07-30 Merged multi-symbol stream is not globally timestamp-monotonic
+  (per-symbol clocks advance independently). Accepted: no consumer reads
+  cross-symbol time order, and the generator is a stand-in, not a market.
 
 ## Blocked on you
 - LOBSTER sample files (lobsterdata.com download needs a browser; container
@@ -116,3 +131,6 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
 - 2026-07-30 Phase B: built bench_tail, attributed max latency to order-pool
   rehash (RESULTS.md), fixed with Book::reserve; max 13.75ms -> 22.4us,
   p50/p99/p99.9 unchanged. Gates green (0 warnings / ctest / 1M fuzz).
+- 2026-07-30 Phase C: BookSet (src/bookset.hpp) + multi-symbol generator +
+  routing fuzz at 1M msgs + bench single/set/interleaved (BENCH.md). Single
+  path unregressed; interleaved ~5% slower. Gates green.

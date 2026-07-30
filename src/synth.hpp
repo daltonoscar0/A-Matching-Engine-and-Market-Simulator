@@ -28,11 +28,17 @@ struct Config {
     uint32_t mid0             = 1'000'000; // $100.0000, ITCH fixed point
     uint32_t tick             = 100;       // one cent
     uint32_t depth_ticks      = 20;
+    // Multi-instrument fields. Defaults keep single-symbol streams
+    // byte-identical to before these fields existed.
+    uint16_t locate           = 1;
+    uint64_t ref_base         = 0;         // order refs start here (+1, +2, ...)
+    itch::Stock stock         = {'S','Y','N','T','H',' ',' ',' '};
 };
 
 class Generator {
 public:
-    explicit Generator(Config cfg) : cfg_(cfg), rng_(cfg.seed) {}
+    explicit Generator(Config cfg)
+        : cfg_(cfg), rng_(cfg.seed), next_ref_(cfg.ref_base) {}
 
     // Next message; expect_ok := a correct book must accept it.
     itch::Message next(bool& expect_ok) {
@@ -50,12 +56,12 @@ private:
 
     itch::Header hdr() {
         itch::Header h;
-        h.stock_locate = 1;
+        h.stock_locate = cfg_.locate;
         h.timestamp    = ts_ += 1 + rng_() % 5000;
         return h;
     }
 
-    static itch::Stock stock() { return {'S','Y','N','T','H',' ',' ',' '}; }
+    itch::Stock stock() const { return cfg_.stock; }
 
     uint64_t pick_live() { return live_[rng_() % live_.size()]; }
 
@@ -214,6 +220,50 @@ private:
     uint64_t next_ref_ = 0;
     uint64_t match_    = 0;
     uint64_t ts_       = 34'200'000'000'000ULL;  // 09:30:00 ns since midnight
+};
+
+// Interleaves N independent per-symbol Generators, one locate code each.
+// Order refs are globally unique across symbols (per-symbol ref_base): a
+// message misrouted to the wrong book therefore hits UnknownId/DuplicateId
+// instead of silently succeeding, which is what makes routing fuzzable.
+// Per-symbol timestamps advance independently, so the merged stream is not
+// globally timestamp-monotonic; none of the consumers care.
+struct MultiConfig {
+    uint64_t seed             = 42;
+    uint32_t invalid_permille = 0;
+    uint16_t n_symbols        = 8;
+};
+
+class MultiGenerator {
+public:
+    explicit MultiGenerator(MultiConfig mc)
+        : pick_rng_(mc.seed ^ 0x9E3779B97F4A7C15ULL) {
+        gens_.reserve(mc.n_symbols);
+        for (uint16_t i = 0; i < mc.n_symbols; ++i) {
+            Config c;
+            c.seed             = mc.seed + 1'000'003ULL * (i + 1);
+            c.invalid_permille = mc.invalid_permille;
+            c.mid0             = 1'000'000 + 200'000u * i;  // $100, $120, ...
+            c.locate           = uint16_t(i + 1);           // locate 0 unused
+            c.ref_base         = (uint64_t(i) + 1) << 40;
+            c.stock            = {'S','Y','N',
+                                  char('0' + (i / 10) % 10),
+                                  char('0' + i % 10), ' ',' ',' '};
+            gens_.emplace_back(c);
+        }
+    }
+
+    itch::Message next(bool& expect_ok) {
+        return gens_[pick_rng_() % gens_.size()].next(expect_ok);
+    }
+
+    size_t n_symbols() const { return gens_.size(); }
+    uint16_t locate(size_t i) const { return uint16_t(i + 1); }
+    const Generator& sub(size_t i) const { return gens_[i]; }
+
+private:
+    std::mt19937_64 pick_rng_;
+    std::vector<Generator> gens_;
 };
 
 }  // namespace synth

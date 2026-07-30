@@ -14,7 +14,8 @@ target_include_directories(exchange_core PUBLIC src)
 
 # Tests (Catch2 v2.13.10 vendored as a single header in third_party/)
 add_executable(tests
-  tests/main.cpp tests/test_book.cpp tests/test_codec.cpp tests/test_fuzz.cpp)
+  tests/main.cpp tests/test_book.cpp tests/test_bookset.cpp
+  tests/test_codec.cpp tests/test_fuzz.cpp)
 target_link_libraries(tests PRIVATE exchange_core)
 
 enable_testing()

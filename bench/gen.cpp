@@ -1,5 +1,8 @@
 // bench_gen - write a framed synthetic ITCH stream to a file.
-// Usage: bench_gen <out_file> [n_messages=5000000] [seed=42]
+// Usage: bench_gen <out_file> [n_messages=5000000] [seed=42] [n_symbols=1]
+// n_symbols=1 uses the single-symbol Generator (output byte-identical to
+// before the multi-symbol support existed); >1 interleaves that many
+// instruments with distinct locate codes.
 #include <cstdio>
 #include <cstdlib>
 #include <vector>
@@ -9,20 +12,23 @@
 
 int main(int argc, char** argv) {
     if (argc < 2) {
-        std::fprintf(stderr, "usage: %s <out_file> [n=5000000] [seed=42]\n",
+        std::fprintf(stderr,
+                     "usage: %s <out_file> [n=5000000] [seed=42] [n_symbols=1]\n",
                      argv[0]);
         return 2;
     }
     size_t   n    = argc > 2 ? strtoull(argv[2], nullptr, 10) : 5'000'000;
     uint64_t seed = argc > 3 ? strtoull(argv[3], nullptr, 10) : 42;
+    uint16_t nsym = argc > 4 ? uint16_t(atoi(argv[4])) : 1;
 
-    synth::Generator gen({.seed = seed});
+    synth::Generator single({.seed = seed});
+    synth::MultiGenerator multi({.seed = seed, .n_symbols = nsym});
     std::vector<uint8_t> wire;
     wire.reserve(n * 40);
     size_t counts[7] = {};  // A F E C X D U
     bool ok;
     for (size_t i = 0; i < n; ++i) {
-        itch::Message m = gen.next(ok);
+        itch::Message m = nsym > 1 ? multi.next(ok) : single.next(ok);
         itch::encode_framed(m, wire);
         switch (itch::type_of(m)) {
             case 'A': counts[0]++; break; case 'F': counts[1]++; break;
@@ -40,12 +46,20 @@ int main(int argc, char** argv) {
     std::fclose(f);
 
     std::printf("wrote %zu messages (%.1f MB) to %s\n"
-                "mix: A=%zu F=%zu E=%zu C=%zu X=%zu D=%zu U=%zu\n"
-                "end state: open=%zu best_bid=%u best_ask=%u\n",
+                "mix: A=%zu F=%zu E=%zu C=%zu X=%zu D=%zu U=%zu\n",
                 n, wire.size() / 1e6, argv[1],
                 counts[0], counts[1], counts[2], counts[3], counts[4],
-                counts[5], counts[6],
-                gen.shadow().open_orders(), gen.shadow().best_bid(),
-                gen.shadow().best_ask());
+                counts[5], counts[6]);
+    if (nsym > 1) {
+        size_t open = 0;
+        for (size_t s = 0; s < multi.n_symbols(); ++s)
+            open += multi.sub(s).shadow().open_orders();
+        std::printf("end state: %u symbols, open=%zu total\n", unsigned(nsym),
+                    open);
+    } else {
+        std::printf("end state: open=%zu best_bid=%u best_ask=%u\n",
+                    single.shadow().open_orders(), single.shadow().best_bid(),
+                    single.shadow().best_ask());
+    }
     return 0;
 }

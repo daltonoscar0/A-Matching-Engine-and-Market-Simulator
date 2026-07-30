@@ -7,14 +7,21 @@
 //     reads cost ~20ns each on this class of hardware, so percentiles carry
 //     that overhead; noted in BENCH.md.
 //
-// Usage: bench_replay <stream_file> [repeat_pass1=3]
+// Usage: bench_replay <stream_file> [repeat_pass1=3] [mode] [reserve=1048576]
+//   mode "set": route through a BookSet on stock_locate (for interleaved
+//   multi-symbol streams). Default: single Book, single-symbol path.
+//   reserve: order-pool buckets pre-reserved per book. Must exceed the peak
+//   per-book open-order count or rehash spikes come back (RESULTS.md
+//   2026-07-30).
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <vector>
 
 #include "../src/book.hpp"
+#include "../src/bookset.hpp"
 #include "../src/feed.hpp"
 #include "../src/itch.hpp"
 
@@ -40,6 +47,8 @@ int main(int argc, char** argv) {
         return 2;
     }
     int repeat = argc > 2 ? atoi(argv[2]) : 3;
+    bool use_set = argc > 3 && std::strcmp(argv[3], "set") == 0;
+    size_t reserve = argc > 4 ? strtoull(argv[4], nullptr, 10) : (1 << 20);
     std::vector<uint8_t> wire = slurp(argv[1]);
 
     // ---- pass 1: throughput ------------------------------------------------
@@ -47,13 +56,21 @@ int main(int argc, char** argv) {
     size_t n_msgs = 0;
     for (int r = 0; r < repeat; ++r) {
         lob::Book book;
-        book.reserve(1 << 20);  // avoid order-pool rehash spikes (RESULTS.md 2026-07-30)
+        book.reserve(reserve);
+        lob::BookSet set(reserve);
         itch::FrameReader rd{wire.data(), wire.size()};
         size_t n = 0, rejected = 0;
         auto t0 = Clock::now();
-        while (auto m = rd.next()) {
-            if (lob::apply(book, *m) != lob::Result::Ok) ++rejected;
-            ++n;
+        if (use_set) {
+            while (auto m = rd.next()) {
+                if (set.apply(*m) != lob::Result::Ok) ++rejected;
+                ++n;
+            }
+        } else {
+            while (auto m = rd.next()) {
+                if (lob::apply(book, *m) != lob::Result::Ok) ++rejected;
+                ++n;
+            }
         }
         auto t1 = Clock::now();
         if (rd.error) { std::fprintf(stderr, "stream error\n"); return 1; }
@@ -61,13 +78,20 @@ int main(int argc, char** argv) {
         double rate = n / secs;
         best_rate = std::max(best_rate, rate);
         n_msgs = n;
-        std::printf("pass1[%d]: %zu msgs in %.3fs -> %.2fM msgs/sec "
-                    "(rejected=%zu, open=%zu)\n",
-                    r, n, secs, rate / 1e6, rejected, book.open_orders());
-        if (!book.audit().empty()) {
-            std::fprintf(stderr, "AUDIT FAIL: %s\n", book.audit().c_str());
-            return 1;
+        size_t open = book.open_orders();
+        bool audit_ok = book.audit().empty();
+        if (use_set) {
+            open = 0;
+            set.for_each_book([&](uint16_t, lob::Book& b) {
+                open += b.open_orders();
+                if (!b.audit().empty()) audit_ok = false;
+            });
         }
+        std::printf("pass1[%d]: %zu msgs in %.3fs -> %.2fM msgs/sec "
+                    "(rejected=%zu, open=%zu%s)\n",
+                    r, n, secs, rate / 1e6, rejected, open,
+                    use_set ? ", bookset" : "");
+        if (!audit_ok) { std::fprintf(stderr, "AUDIT FAIL\n"); return 1; }
     }
 
     // ---- pass 2: per-message latency --------------------------------------
@@ -75,7 +99,8 @@ int main(int argc, char** argv) {
     lat_ns.reserve(n_msgs);
     {
         lob::Book book;
-        book.reserve(1 << 20);
+        book.reserve(reserve);
+        lob::BookSet set(reserve);
         itch::FrameReader rd{wire.data(), wire.size()};
         // Manual framing so the timed region is exactly decode+apply.
         while (rd.pos < rd.size) {
@@ -83,7 +108,8 @@ int main(int argc, char** argv) {
             const uint8_t* body = rd.data + rd.pos + 2;
             auto t0 = Clock::now();
             auto m = itch::decode(body, len);
-            lob::apply(book, *m);
+            if (use_set) set.apply(*m);
+            else         lob::apply(book, *m);
             auto t1 = Clock::now();
             lat_ns.push_back(uint32_t(
                 std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0)
