@@ -949,3 +949,8 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   fact (median factor 294.5x; lag 1 alone typically exceeds the context).
   Architecture decision left to the user. Gates green (0 warnings / ctest /
   1M fuzz).
+- 2026-07-30 Phase 2: docs/CLAIM.md written - the narrow defensible claim
+  with every qualifier cited to its RESULTS.md row / PLAN Decision (venue,
+  9-day split, per-symbol measurability, 2 scored facts + 4 demotions +
+  null floor, done/not-done with external-vs-internal validation named).
+  No LM result claimed; LM column explicitly nonexistent. Gates green.
