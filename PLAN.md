@@ -587,6 +587,118 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   comparison (RESULTS.md measurable-only table; null max was 0.007).
   Set before any LM output exists.
 
+- 2026-07-30 AMENDMENT to the pre-registration (commit c06df11, the
+  2026-07-30 "PRE-REGISTRATION of the headline real-vs-LM-vs-null table"
+  Decision). Per that Decision's own protocol: a new dated Decision naming
+  the original, stating what changed and why; the original text is NOT
+  edited. Both defects are fixed BEFORE any LM output exists - that is the
+  point of doing it now.
+
+  DEFECT 1 (envelope is seed-count dependent). The original (e) built the
+  null envelope as [min, max] over null seeds. The min-max of k draws does
+  not converge as k grows - it diverges, so adding seeds makes the LM's
+  bar strictly harder; worse, the original fixed the null at 7 seeds while
+  allowing the LM ">= 7", an asymmetry in the same direction. FIX:
+  (i) The null envelope per measurable (symbol, quantity, TEST day) is now
+  the 10th/90th PERCENTILE of the null's 7 per-seed values. Quantile
+  convention pinned (there are several): linear interpolation between
+  order statistics at position p*(k-1)+1, so at k=7 the 10th percentile is
+  x(1) + 0.6*(x(2) - x(1)) and the 90th is x(6) + 0.4*(x(7) - x(6)).
+  Quantiles chosen over mean +/- 2 SD, argued: the null slope's per-seed
+  distribution is a nonlinear fit of sampling noise and visibly skewed
+  (seed range [-0.229 .. 0.003], median -0.018), so a symmetric +/-2SD
+  band puts mass where the distribution has none; an SD estimated from 7
+  points is itself unstable; and quantiles are distribution-free, bounded
+  by the support, and CONVERGE in k instead of diverging. Honest note: at
+  k=7 the interpolated [q10, q90] sits numerically close to [min, max]
+  (1.6th/6.4th order statistics), so today's bar barely moves - what the
+  fix changes is the RULE: more seeds now stabilizes the envelope instead
+  of widening it.
+  (ii) LM sampling seeds = EXACTLY 7, the null's count (was ">= 7").
+  Symmetric by construction; raising both counts together would require a
+  new dated Decision and, after the seal is broken, is barred by (g).
+
+  DEFECT 2 (pass and fail bars leave a gap). Beating needed >= 2/3 of
+  measurable symbols; failing needed >= 1/2 inside the envelope; an
+  outcome like 60% beating / 35% inside was neither - and an ambiguous
+  zone is where interpretation creeps in once results exist. FIX: an
+  explicit INCONCLUSIVE verdict, chosen over forcing the two conditions
+  complementary, argued: complementarity (FAIL = not PASS) would erase a
+  distinction the data can express - an LM beating on 60% of symbols and
+  an LM sitting inside the envelope on 90% are different results, and
+  collapsing both to FAIL just relocates the interpretation creep into
+  prose ("failed, but only just"). Instead the verdict space is a
+  three-way PARTITION, mutually exclusive (2/3 + 1/2 > 1) and now
+  exhaustive, with the ambiguous zone pre-committed to a conservative
+  reading rather than left to future judgment:
+  - PASS: beats (per the amended beat condition) on >= 2/3 of that fact's
+    measurable TEST symbols.
+  - FAIL: all scored quantities inside their [q10, q90] envelopes on
+    >= 1/2 of measurable symbols.
+  - INCONCLUSIVE: neither. Reporting requirement: published with the full
+    per-symbol table (counts of beat / inside-envelope / neither-side,
+    i.e. real-side-but-below-floor or wrong-side-of-envelope), and the
+    headline claim MUST use the conservative reading - an INCONCLUSIVE
+    fact is reported as "not shown to beat the null", never as a partial
+    pass. What would resolve it, stated honestly: nothing within this
+    project's data and seal protocol - more TEST days do not exist (every
+    downloadable BX day is already allocated) and re-running with more
+    seeds after the seal is broken is barred by (g). INCONCLUSIVE is a
+    terminal, publishable verdict; resolution would take a follow-up on a
+    deeper venue or consolidated feed under a fresh pre-registration.
+
+  OPERATIVE AMENDED SCORING RULE, restated in full so it is readable
+  without diffing (sections (a), (b), (c), (d), (g) of c06df11 are
+  unchanged except where stated; this supersedes (e) and (f)):
+  1. Scored facts: FLOW-SIGN MEMORY (per-symbol ACF(1) at 1ms collapse +
+     log-log decay slope over lags 1-100) and TICK-TIME
+     VOLATILITY-CLUSTERING PERSISTENCE (ratified 2026-07-30: per-symbol
+     tick ACF(|r|) at lags 10 and 100 both scored, lag 50 reported
+     unscored; fact-level verdict rests on the lag-100 count; the lag-10
+     no-separation PREDICTION of the ratification Decision is on record).
+  2. Measurability per (d), unchanged: flow memory needs >= 500 collapsed
+     signs; persistence needs vartop10_absr_tick < 0.5 AND n_tick >=
+     1000; identical rule on all three columns; a cell unmeasurable on
+     either the LM or the real column is excluded, no credit or penalty;
+     scored symbol sets named in the published table.
+  3. Seeds: null 7, LM exactly 7. Per (b): 2 TEST days scored per day,
+     never pooled; reported statistic = cross-seed median per (symbol,
+     quantity); seed spread is estimator noise, used only for envelopes.
+  4. Null envelope: [q10, q90] of the null's 7 per-seed values, per
+     (symbol, quantity, day), quantile convention as above.
+  5. LM BEATS the null on a symbol:
+     - flow memory: median ACF(1) > q90[ACF(1)] AND ACF(1) >= 0.10, AND
+       median slope < q10[slope] AND slope <= -0.30 (floors unchanged
+       from the original).
+     - persistence, lag 100: median tick ACF(|r|) lag-100 >
+       q90[lag-100] AND >= 0.015 (floor from the ratification Decision:
+       the real PRESENT panel minimum; the null envelope here hugs zero,
+       so a floor is required for the same reason as flow memory's).
+     - persistence, lag 10 (scored, reported against the 2b prediction):
+       median tick ACF(|r|) lag-10 > q90[lag-10]; no absolute floor -
+       the null's lag-10 envelope is well off zero (measurable-only
+       range 0.014-0.096), so the envelope itself carries the load.
+  6. Verdict per (fact, TEST day): PASS / FAIL / INCONCLUSIVE as defined
+     in the DEFECT 2 fix. If the two TEST days disagree, both verdicts
+     are published; regime disagreement is a finding, not a tiebreak.
+  7. Stretch bar unchanged from the original (e): "reproduces real" =
+     additionally within the real TEST value +/- 0.10 on ACF(1), +/- 0.20
+     on slope. Defined for flow memory only; persistence has no stretch
+     bar.
+  8. The falsifiable sentence (f), amended only in its envelope wording:
+     "The LM FAILS the headline comparison if, on the flow-sign memory
+     fact, its per-symbol ACF(1) and log-log decay slope fall inside the
+     CST null's [q10, q90] seed-quantile envelope - not on the real side
+     of it - for at least half of the flow-measurable TEST symbols; that
+     is, if it is not reliably distinguishable from a memoryless
+     generator on a majority of the symbols where the fact can be
+     measured. Reproducing the pooled cross-symbol median while failing
+     this per-symbol bar is also a failure, not a partial pass."
+  9. Sanity checks unchanged from (c): fat-tail kurtosis level,
+     aggregational-Gaussianity decay shape, Hill tail index, ACF(r)
+     bounce sign - never scoring criteria; gross basic-validity failures
+     noted separately; passing earns nothing.
+
 ## Blocked on you
 - (nothing) - resolved 2026-07-30:
   - LOBSTER samples: superseded. Real NASDAQ BX ITCH day landed in data/
