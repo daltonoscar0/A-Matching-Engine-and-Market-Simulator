@@ -725,6 +725,21 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   pooled over 3 TRAIN days (4.6-8.7% by day). FORMAT_RECONCILIATION.md
   updated to mark the fork RESOLVED and carry the corrected provenance.
 
+- 2026-07-30 (context-length gate, FINDING - measurement only, nothing
+  changed) The planned LM architecture (tape repo config: 4 layers, vocab
+  52, n_ctx=320 = 64 events at 5 tokens/event) CANNOT express the
+  pre-registered scoring fact (flow-sign ACF to lag 100, 1ms collapse).
+  Measured on 3 TRAIN days x panel from existing stylized summaries
+  (RESULTS.md 2026-07-30 "Context-length gate"): median 188.5 book events
+  per collapsed sign, so lag 100 needs a median 94,246 tokens of context -
+  a 294.5x n_ctx growth factor (min 59.9x, max 8815.6x); 0 of 30
+  symbol-days fit. The median tokens to span even lag 1 is 942, so a
+  320-token context typically holds ZERO complete prior signs. Per the
+  run's standing order: NO fix is proposed here - no new n_ctx, no
+  tokenization change, no pre-registration amendment. The architecture
+  decision is the user's (see Blocked on you). Work continued to the
+  phases that are needed whatever context length is chosen.
+
 ## Blocked on you
 - (nothing) - resolved 2026-07-30:
   - LOBSTER samples: superseded. Real NASDAQ BX ITCH day landed in data/
@@ -927,3 +942,10 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   FORMAT_RECONCILIATION.md marked resolved; ~12% provenance corrected
   (source was the synthetic generator's U mix in BENCH.md 2026-07-27, not
   real data; real figure 5.9%).
+- 2026-07-30 Phase 1 (context-length gate): computed events-per-sign and
+  lag-100 token requirements for the 13-symbol panel on 3 TRAIN days from
+  existing out/multiday summaries (no raw data touched, TEST sealed);
+  RESULTS.md row + Decisions finding: n_ctx=320 cannot express the scored
+  fact (median factor 294.5x; lag 1 alone typically exceeds the context).
+  Architecture decision left to the user. Gates green (0 warnings / ctest /
+  1M fuzz).

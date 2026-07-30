@@ -167,3 +167,73 @@ Full per-symbol table: out/multiday/persym_analysis.txt.
 | No linear autocorrelation / bounce (ACF(r) 1s lag-1 < 0) | 49/49 symbols negative median; significant on 137/140 symbol-days | q25 -0.325 / med -0.212 / q75 -0.121, range [-0.502 .. -0.006] | UNIFORM in sign, 80x spread in magnitude - per-symbol magnitude is a real scoring axis. |
 | Volatility clustering (tick time, lag 10) | PRESENT on 87/91 measured symbol-days (96%); ABSENT only OILX (2 days, zero executions on this venue), IWB (1 day), MDY (1 borderline day); UNMEASURED 49/140 symbol-days - concentrated in tight-spread pinned names (IWM 0 measurable days of 7; XLI 0/3; XLP, SDY, DUST, EFA never measurable) | over PRESENT symbols: q25 0.107 / med 0.173 / q75 0.282, range [0.023 .. 0.995] | NEAR-UNIVERSAL where measurable. The "half the panel lacks it" reading is dead: the split was measurement validity (variance concentration from venue flicker), not a property split. An LM must be scored per symbol WITH the same measurability rule applied to its output; matching the pooled median is worthless. |
 | Order-flow memory (sign ACF(1), >= 500 signs) | measurable for 30/49 symbols (the rest execute too little on BX); significant-positive on 76/78 measurable symbol-days; per-symbol median ACF(1) positive for 30/30 | ACF(1): q25 0.207 / med 0.298 / q75 0.375, range [0.037 .. 0.517]. Slope: q25 -0.63 / med -0.52 / q75 -0.42, range [-0.95 .. -0.22] | UNIFORM in presence where measurable, symbol-dependent in strength. 19 symbols are unmeasured for flow memory on this venue - the LM cannot be scored on them and must not be penalized or credited there. |
+
+## Context-length gate: can n_ctx=320 express the scored fact? (2026-07-30)
+
+Question (measurement only, no fix proposed): the planned LM (tape repo
+config: 4 layers, vocab 52, n_ctx=320) holds 320 tokens = 64 events at 5
+tokens/event. The pre-registered scoring fact is flow-sign ACF out to lag
+100 in COLLAPSED-SIGN space (1ms collapse). How many tokens of context does
+lag 100 actually require on BX?
+
+Method: computed from the existing per-day stylized summaries
+(out/multiday/<day>/stylized_summary.csv, columns n_msgs_w = applied
+in-window book messages and n_signs = 1ms-collapsed market-order signs;
+cross-checked against console.txt signN). No raw data read; TEST untouched.
+Days: 20190130, 20190530, 20191230 (TRAIN). Panel: the 13 CST panel
+symbols; 9 of 39 (symbol,day) cells absent from that day's top-20 (panel
+membership is >=4 of 6 days). tokens(lag k) = k * (n_msgs_w / n_signs) * 5,
+i.e. signs treated as uniformly spaced in event time (real signs cluster,
+so tail lags are ragged; does not change the order of magnitude).
+Independently recomputed from the CSVs (all 39 cells): exact agreement.
+
+| symbol | day | msgs_w | signs | events/sign | tok lag1 | tok lag10 | tok lag100 | ×320 |
+|---|---|---|---|---|---|---|---|---|
+| IWM | 20190130 | 432898 | 5468 | 79.2 | 396 | 3958 | 39585 | 123.7 |
+| SPY | 20190130 | 355151 | 5667 | 62.7 | 313 | 3134 | 31335 | 97.9 |
+| XLK | 20190130 | 278569 | 1579 | 176.4 | 882 | 8821 | 88211 | 275.7 |
+| QQQ | 20190130 | 261602 | 1544 | 169.4 | 847 | 8472 | 84716 | 264.7 |
+| IWO | 20190130 | 242604 | 43 | 5642.0 | 28210 | 282098 | 2820977 | 8815.6 |
+| IJH | 20190130 | 309591 | 124 | 2496.7 | 12484 | 124835 | 1248351 | 3901.1 |
+| XLE | 20190130 | 255855 | 861 | 297.2 | 1486 | 14858 | 148580 | 464.3 |
+| XLV | 20190130 | 237850 | 572 | 415.8 | 2079 | 20791 | 207911 | 649.7 |
+| IWM | 20190530 | 201095 | 1429 | 140.7 | 704 | 7036 | 70362 | 219.9 |
+| SPY | 20190530 | 172927 | 1917 | 90.2 | 451 | 4510 | 45104 | 140.9 |
+| XLK | 20190530 | 163658 | 816 | 200.6 | 1003 | 10028 | 100281 | 313.4 |
+| QQQ | 20190530 | 174451 | 1716 | 101.7 | 508 | 5083 | 50831 | 158.8 |
+| UVXY | 20190530 | 145965 | 1344 | 108.6 | 543 | 5430 | 54302 | 169.7 |
+| SOXL | 20190530 | 156803 | 55 | 2851.0 | 14255 | 142548 | 1425482 | 4454.6 |
+| TLT | 20190530 | 127038 | 1239 | 102.5 | 513 | 5127 | 51266 | 160.2 |
+| IJH | 20190530 | 141932 | 189 | 751.0 | 3755 | 37548 | 375481 | 1173.4 |
+| VXX | 20190530 | 126622 | 735 | 172.3 | 861 | 8614 | 86137 | 269.2 |
+| IWM | 20191230 | 390996 | 1945 | 201.0 | 1005 | 10051 | 100513 | 314.1 |
+| SPY | 20191230 | 584750 | 4263 | 137.2 | 686 | 6858 | 68584 | 214.3 |
+| XLK | 20191230 | 186054 | 610 | 305.0 | 1525 | 15250 | 152503 | 476.6 |
+| QQQ | 20191230 | 428751 | 1917 | 223.7 | 1118 | 11183 | 111829 | 349.5 |
+| IWO | 20191230 | 156156 | 66 | 2366.0 | 11830 | 118300 | 1183000 | 3696.9 |
+| UVXY | 20191230 | 177240 | 4622 | 38.3 | 192 | 1917 | 19174 | 59.9 |
+| SOXL | 20191230 | 135202 | 42 | 3219.1 | 16095 | 160955 | 1609548 | 5029.8 |
+| TLT | 20191230 | 137637 | 984 | 139.9 | 699 | 6994 | 69938 | 218.6 |
+| IJH | 20191230 | 127852 | 57 | 2243.0 | 11215 | 112151 | 1121509 | 3504.7 |
+| XLE | 20191230 | 152517 | 1497 | 101.9 | 509 | 5094 | 50941 | 159.2 |
+| XLV | 20191230 | 122439 | 248 | 493.7 | 2469 | 24685 | 246853 | 771.4 |
+| IWN | 20191230 | 192313 | 72 | 2671.0 | 13355 | 133551 | 1335507 | 4173.5 |
+| VXX | 20191230 | 187297 | 3116 | 60.1 | 301 | 3005 | 30054 | 93.9 |
+
+Absent cells (not in that day's top-20): UVXY/SOXL/TLT/IWN/VXX on 20190130;
+IWO/XLE/XLV/IWN on 20190530.
+
+Pooled over the 30 valid rows: median events/sign 188.5; median tokens for
+lag 100 = 94,246; n_ctx growth factor for lag 100: median 294.5x, min
+59.9x (UVXY 20191230, the sign-densest cell), max 8815.6x (IWO 20190130).
+
+ANSWER: NO - the planned n_ctx=320 cannot express the pre-registered
+scoring fact, and not marginally: the context spans lag 100 in sign space
+for 0 of 30 symbol-days. It is worse than that: the MEDIAN tokens needed
+to span even lag 1 is 942 (> 320 for 27 of 30 rows), so a 320-token
+context typically contains ZERO complete prior market-order signs - the
+model would have to reproduce sign autocorrelation at lags it can never
+condition on, i.e. via marginal statistics rather than memory. Even the
+best cell needs ~60x growth for lag 100. This is a measurement, not a
+proposal: the architecture decision (n_ctx, tokenization, or otherwise)
+is the user's; the pre-registration is NOT amended by this row.
