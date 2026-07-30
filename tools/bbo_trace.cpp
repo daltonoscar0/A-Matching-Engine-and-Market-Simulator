@@ -26,6 +26,7 @@
 #include <string>
 #include <vector>
 
+#include "../src/dataset.hpp"
 #include "../src/itch_replay.hpp"
 
 static std::vector<uint8_t> slurp(const char* path) {
@@ -90,17 +91,21 @@ struct Tracked {
 
 int main(int argc, char** argv) {
     if (argc < 3) {
-        std::fprintf(stderr, "usage: %s <itch_file> <out_dir> [--top N]\n",
-                     argv[0]);
+        std::fprintf(stderr, "usage: %s <itch_file> <out_dir> [--top N] [%s]\n",
+                     argv[0], dataset::kOverrideFlag);
         return 2;
     }
     const char* out_dir = argv[2];
     size_t top_n = 5;
+    bool final_comparison = false;
     for (int i = 3; i < argc; ++i) {
         if (!std::strcmp(argv[i], "--top") && i + 1 < argc)
             top_n = strtoull(argv[++i], nullptr, 10);
+        else if (!std::strcmp(argv[i], dataset::kOverrideFlag))
+            final_comparison = true;
         else { std::fprintf(stderr, "bad arg: %s\n", argv[i]); return 2; }
     }
+    dataset::enforce(argv[1], final_comparison);
 
     std::vector<uint8_t> wire = slurp(argv[1]);
     std::printf("file: %s (%.1f MB)\n", argv[1], wire.size() / 1e6);

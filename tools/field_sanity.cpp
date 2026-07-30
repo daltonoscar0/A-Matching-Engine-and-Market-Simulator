@@ -16,6 +16,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "../src/dataset.hpp"
 #include "../src/itch.hpp"
 
 static std::vector<uint8_t> slurp(const char* path) {
@@ -64,10 +65,18 @@ static void print_top(const Hist& h, uint64_t total, size_t n, bool dollars) {
 }
 
 int main(int argc, char** argv) {
-    if (argc != 2) {
-        std::fprintf(stderr, "usage: %s <itch_file>\n", argv[0]);
+    if (argc < 2) {
+        std::fprintf(stderr, "usage: %s <itch_file> [%s]\n", argv[0],
+                     dataset::kOverrideFlag);
         return 2;
     }
+    bool final_comparison = false;
+    for (int i = 2; i < argc; ++i) {
+        if (!std::strcmp(argv[i], dataset::kOverrideFlag))
+            final_comparison = true;
+        else { std::fprintf(stderr, "bad arg: %s\n", argv[i]); return 2; }
+    }
+    dataset::enforce(argv[1], final_comparison);
     std::vector<uint8_t> wire = slurp(argv[1]);
     std::printf("file: %s (%.1f MB)\n", argv[1], wire.size() / 1e6);
 

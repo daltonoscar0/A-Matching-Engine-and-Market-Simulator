@@ -33,6 +33,11 @@ Milestone: closed-loop simulation runs N steps without invariant violations.
       executes too little for the Lillo-Farmer lag-1000 flow memory
       (max 2945 market orders per symbol-day) and its thin top-of-book
       pollutes tail estimates on some symbols.
+      2026-07-30 update: the "more days" gap is closed as far as this venue
+      allows - the "real" column is now cross-day medians over the 7
+      TRAIN+VAL days (RESULTS.md), with per-day spread reported. The split
+      is mechanical (src/dataset.hpp); TEST = {20181228, 20200130} is
+      sealed until the final comparison (see Decisions).
 - [ ] Fat tails (return kurtosis), volatility clustering (ACF of |r|),
       order-flow autocorrelation, square-root impact fit - for the LM sim
       and null columns once Phase 2 exists
@@ -51,9 +56,10 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
      what remains is the LM-facing loop and message validation.
   2. Sampling controls (temperature, top-k) + rejection of malformed
      messages at the adapter boundary.
-  3. Multi-day stylized-facts baseline: process the 8 additional BX days in
-     data/ through tools/stylized, report cross-day medians so the "real"
-     column is no longer one draw.
+  3. (done 2026-07-30, reshaped by the dataset split) Multi-day baseline
+     computed on the 7 TRAIN+VAL days only; TEST (20181228, 20200130) is
+     sealed behind --i-am-running-the-final-comparison until the headline
+     real-vs-LM-vs-null table runs once.
 
 ## Decisions
 - 2026-07-27 Catch2 v2.13.10 vendored (third_party/catch.hpp), the one
@@ -350,9 +356,56 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   No plateau: ACF(1) median 0.414 -> 0.168 slides smoothly; verdict (per
   the pre-registered rule) = the lag-1 level is a parameter choice; slope
   ~ -0.6 is the robust quantity (see Decisions). Gates green.
+- 2026-07-30 (dataset split) The 9 BX days were BOTH the intended
+  orderflow-lm training set AND the source of the Phase 3 "real" column - a
+  leakage hazard: train on all 9, baseline on all 9, and Phase 3 asks
+  whether the model reproduces statistics of data it memorised. Split fixed
+  NOW, mechanically, in src/dataset.hpp (not a convention someone
+  remembers): TEST = {20181228, 20200130}, VAL = {20190730}, TRAIN =
+  {20190130, 20190327, 20190530, 20190830, 20191030, 20191230}.
+  Reasoning: TEST needs >= 2 days including 20181228 (Q4-2018 selloff,
+  4.6x volume - a held-out set of only calm days tests nothing about
+  regime transfer); 20200130 joins it as the most recent day, so TEST spans
+  both a stress regime and forward-in-time transfer on a calm one.
+  VAL = 20190730 because it is the methodology-development day: every tool
+  was debugged on it and every published number so far comes from it, so it
+  is the one day that can never honestly be TEST; making it VAL formalizes
+  its role as the tuning day (sampling temperature, hyperparameters). Costs
+  one TRAIN day (6 instead of 7) - accepted.
+  TEST IS NOT TO BE LOOKED AT - not for baseline statistics, not for
+  debugging, not for "just checking" - until the headline real-vs-sim
+  comparison runs once. Enforced, not advisory: dataset::enforce() in every
+  day-reading binary (tools/stylized, tools/bbo_trace, tools/field_sanity,
+  tools/gap_hist, bench/replay_itch) refuses TEST days without
+  --i-am-running-the-final-comparison and refuses unassigned days outright
+  (the override does not bypass that); tests/test_dataset.cpp asserts the
+  guard fires and pins the allocation constraints.
+  Prior TEST exposure, written down rather than hidden: 20181228 was
+  replayed once before the split existed (2026-07-30 generalization check -
+  rejects/conservation/drain and message counts only, RESULTS.md row). That
+  is engine validation, not distributional peeking; accepted. 20200130 has
+  never been read beyond gzip -t. Both are sealed from here on.
+  Consequence for the published stylized-facts table: 20190730 landed in
+  VAL, i.e. inside TRAIN+VAL, so the existing table is NOT contaminated by
+  TEST data; it is one draw, and the TRAIN+VAL multi-day baseline
+  (RESULTS.md 2026-07-30) supersedes it as the Phase 3 "real" column.
 - 2026-07-30 match() mutation re-check: introduced an off-by-one in FIFO
   fill ordering (match takes head->next instead of head). The FIFO
   property test fails (4 assertions) AND the strong emit->reconstruct
   fuzz test aborts - the strong test catches fill-ordering bugs
   independently of the property tests. Mutation reverted, book.cpp
   byte-identical to HEAD, gates re-run green.
+- 2026-07-30 Dataset split (leakage closure): src/dataset.hpp assigns all 9
+  days mechanically (TEST 20181228+20200130, VAL 20190730, TRAIN rest);
+  dataset::enforce() guard in stylized/bbo_trace/field_sanity/gap_hist/
+  replay_itch refuses TEST without --i-am-running-the-final-comparison and
+  refuses unassigned days outright; tests/test_dataset.cpp (6 cases) pins
+  the constraints and the refusal, guard also verified live (exit 3 on the
+  .gz TEST day). Multi-day "real" column recomputed on the 7 TRAIN+VAL days
+  (out/multiday/, RESULTS.md v2 section): the published one-day table was
+  computed on VAL, so uncontaminated but superseded as one draw. Per-day
+  spread is a finding: 1s kurtosis day-medians span 18.7-1655 (FOMC jump +
+  venue flaps dominate the level), flow-ACF slope -0.44..-0.63 across days
+  (robust to the estimator, not the draw); Hill-excl-failures and tick-time
+  vol clustering are the stable targets. Gates green (0 warnings / ctest /
+  1M fuzz).

@@ -19,6 +19,7 @@
 #include <set>
 #include <vector>
 
+#include "../src/dataset.hpp"
 #include "../src/itch_replay.hpp"
 
 using Clock = std::chrono::steady_clock;
@@ -99,12 +100,13 @@ int main(int argc, char** argv) {
     if (argc < 2) {
         std::fprintf(stderr,
             "usage: %s <itch_file> [--max N] [--books] [--bench R] "
-            "[--reserve N]\n", argv[0]);
+            "[--reserve N] [%s]\n", argv[0], dataset::kOverrideFlag);
         return 2;
     }
     size_t max_msgs = size_t(-1), reserve = 0;
     bool print_books = false;
     int bench_repeat = 0;
+    bool final_comparison = false;
     for (int i = 2; i < argc; ++i) {
         if (!std::strcmp(argv[i], "--max") && i + 1 < argc)
             max_msgs = strtoull(argv[++i], nullptr, 10);
@@ -113,8 +115,11 @@ int main(int argc, char** argv) {
             bench_repeat = atoi(argv[++i]);
         else if (!std::strcmp(argv[i], "--reserve") && i + 1 < argc)
             reserve = strtoull(argv[++i], nullptr, 10);
+        else if (!std::strcmp(argv[i], dataset::kOverrideFlag))
+            final_comparison = true;
         else { std::fprintf(stderr, "bad arg: %s\n", argv[i]); return 2; }
     }
+    dataset::enforce(argv[1], final_comparison);
 
     std::vector<uint8_t> wire = slurp(argv[1]);
     std::printf("file: %s (%.1f MB)\n", argv[1], wire.size() / 1e6);

@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include "dataset.hpp"
 #include "itch_replay.hpp"
 
 static std::vector<uint8_t> slurp(const char* path) {
@@ -32,7 +33,18 @@ static constexpr uint64_t T_OPEN  = 34200 * NS;
 static constexpr uint64_t T_CLOSE = 57600 * NS;
 
 int main(int argc, char** argv) {
-    if (argc < 2) { std::fprintf(stderr, "usage: %s <itch_file>\n", argv[0]); return 2; }
+    if (argc < 2) {
+        std::fprintf(stderr, "usage: %s <itch_file> [%s]\n", argv[0],
+                     dataset::kOverrideFlag);
+        return 2;
+    }
+    bool final_comparison = false;
+    for (int i = 2; i < argc; ++i) {
+        if (!std::strcmp(argv[i], dataset::kOverrideFlag))
+            final_comparison = true;
+        else { std::fprintf(stderr, "bad arg: %s\n", argv[i]); return 2; }
+    }
+    dataset::enforce(argv[1], final_comparison);
     std::vector<uint8_t> wire = slurp(argv[1]);
 
     // last fill ts+sign per locate; histogram of log10(gap ns) same-sign pairs
