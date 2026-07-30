@@ -180,6 +180,8 @@ struct Tracked {
     uint64_t last_sign_ts = 0;
     int8_t   last_sign    = 0;
     uint64_t one_sided_events = 0; // applied msgs skipped: book one-sided
+    uint64_t n_exec = 0;           // raw E/C fills in window (pre-collapse)
+    std::vector<uint32_t> spread_ticks;   // per two-sided observation
 };
 
 int main(int argc, char** argv) {
@@ -271,6 +273,7 @@ int main(int argc, char** argv) {
         // Aggressor sign before apply: the resting order's side is known now.
         char type = itch::type_of(*m);
         if (in_window && (type == 'E' || type == 'C')) {
+            ++t.n_exec;
             if (const lob::Order* o = b.find(lob::ref_of(*m))) {
                 int8_t s = o->side == lob::Side::Sell ? int8_t(1) : int8_t(-1);
                 if (t.sign.empty() || s != t.last_sign ||
@@ -289,6 +292,7 @@ int main(int argc, char** argv) {
             if (bid && ask) {
                 t.ts.push_back(ts);
                 t.mid.push_back((double(bid) + double(ask)) / 2.0 / 1e4);
+                t.spread_ticks.push_back((ask - bid + 50) / 100);
             } else {
                 ++t.one_sided_events;
             }
@@ -307,7 +311,16 @@ int main(int argc, char** argv) {
         "acf1_r_event,acf1_r_1s,acf1_absr_1s,acf10_absr_1s,acf50_absr_1s,"
         "acf100_absr_1s,n_tick,acf1_absr_tick,acf10_absr_tick,"
         "acf50_absr_tick,acf100_absr_tick,n_signs,acf1_sign,acf10_sign,"
-        "acf100_sign,acf1000_sign,sign_loglog_slope\n");
+        "acf100_sign,acf1000_sign,sign_loglog_slope,"
+        // per-symbol covariates (added 2026-07-30 for the tick-time
+        // volatility-clustering split characterisation; appended so prior
+        // consumers of the CSV see identical leading columns):
+        //   vartop10_absr_tick = share of the centered sum of squares of
+        //   |r_tick| carried by its 10 largest terms - when this is large
+        //   the ACF estimator degenerates into an outlier-placement
+        //   statistic and the symbol-day is unmeasured for clustering.
+        "n_msgs_w,twosided_frac,med_spread_ticks,med_mid,rel_tick_bp,"
+        "n_exec,cv_absr_tick,vartop10_absr_tick\n");
 
     std::printf("\n%-8s %9s %7s %8s %8s %8s %8s %7s %7s %8s %8s %8s %8s\n",
                 "symbol", "n_event", "zeroE", "kurtE", "kurt1s", "kurt10s",
@@ -396,10 +409,43 @@ int main(int argc, char** argv) {
         auto at = [](const std::vector<double>& v, size_t k) {
             return k < v.size() ? v[k] : NAN;
         };
+        // Covariates for the clustering-split characterisation.
+        double med_spread = NAN, med_mid = NAN;
+        if (!t.spread_ticks.empty()) {
+            auto sp = t.spread_ticks;
+            std::nth_element(sp.begin(), sp.begin() + sp.size() / 2, sp.end());
+            med_spread = double(sp[sp.size() / 2]);
+            auto md = t.mid;
+            std::nth_element(md.begin(), md.begin() + md.size() / 2, md.end());
+            med_mid = md[md.size() / 2];
+        }
+        double twosided = double(t.ts.size()) /
+                          double(t.ts.size() + t.one_sided_events);
+        double cv_tick = NAN, vartop10 = NAN;
+        if (absr_tick.size() >= 20) {
+            double mean = 0;
+            for (double v : absr_tick) mean += v;
+            mean /= double(absr_tick.size());
+            std::vector<double> dev2(absr_tick.size());
+            double css = 0;
+            for (size_t i = 0; i < absr_tick.size(); ++i) {
+                dev2[i] = (absr_tick[i] - mean) * (absr_tick[i] - mean);
+                css += dev2[i];
+            }
+            std::nth_element(dev2.begin(), dev2.begin() + 10, dev2.end(),
+                             std::greater<>());
+            double top = 0;
+            for (size_t i = 0; i < 10; ++i) top += dev2[i];
+            if (css > 0 && mean > 0) {
+                cv_tick  = std::sqrt(css / double(absr_tick.size())) / mean;
+                vartop10 = top / css;
+            }
+        }
         std::fprintf(sum,
             "%s,%zu,%.4f,%.2f,%.2f,%zu,%.4f,%.2f,%.2f,%.2f,%.2f,"
             "%.2f,%.2f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%zu,%.4f,%.4f,%.4f,"
-            "%.4f,%zu,%.4f,%.4f,%.4f,%.4f,%.3f\n",
+            "%.4f,%zu,%.4f,%.4f,%.4f,%.4f,%.3f,"
+            "%zu,%.4f,%.1f,%.2f,%.3f,%" PRIu64 ",%.3f,%.4f\n",
             t.name.c_str(), r_ev.size(), zero_fraction(r_ev),
             excess_kurtosis(r_ev), excess_kurtosis(r_tick), r1.size(),
             zero_fraction(r1), excess_kurtosis(r1), excess_kurtosis(r1_nz),
@@ -410,7 +456,10 @@ int main(int argc, char** argv) {
             r_tick.size(), at(acf_absr_tick, 1), at(acf_absr_tick, 10),
             at(acf_absr_tick, 50), at(acf_absr_tick, 100),
             signd.size(), at(acf_sign, 1), at(acf_sign, 10),
-            at(acf_sign, 100), at(acf_sign, 1000), slope);
+            at(acf_sign, 100), at(acf_sign, 1000), slope,
+            t.ts.size() + t.one_sided_events, twosided, med_spread, med_mid,
+            std::isnan(med_mid) ? NAN : 0.01 / med_mid * 1e4, t.n_exec,
+            cv_tick, vartop10);
 
         std::printf("%-8s %9zu %6.1f%% %8.1f %8.1f %8.1f %8.1f %7.2f %7.3f "
                     "%8.3f %8.3f %8zu %8.3f\n",

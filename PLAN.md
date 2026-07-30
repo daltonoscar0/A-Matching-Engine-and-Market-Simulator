@@ -321,6 +321,29 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   variant of the statistic gets hunted for in the same session to rescue
   it.
 
+- 2026-07-30 (per-symbol restructure) The Phase 3 comparison is scored PER
+  SYMBOL from now on; pooled cross-symbol medians are demoted to summary
+  statistics. Trigger: the 2a "vol clustering survives on 11/20, vanishes
+  on 6/20" split dissolved under characterisation - the vanishing was
+  MEASUREMENT DEGENERACY, not absence. Rule, stated before classifying: a
+  symbol-day's tick ACF(|r|) is UNMEASURED when vartop10 (share of the
+  centered sum of squares of |r_tick| in its 10 largest terms) >= 0.5,
+  because ten points carrying half the variance make the ACF an
+  outlier-placement statistic; 0.5 is a judgment call and the P/A/U counts
+  are reported at 0.3/0.5/0.7 (the ABSENT set stays tiny under all three).
+  The thinness hypothesis was tested and FAILED: zeros at n_tick up to
+  250k, detection at n_tick 11.8k, detectability floor 0.021 << typical
+  effect 0.16 - there is no n threshold and n is not the binding
+  limitation. tools/stylized gained per-symbol covariate columns (appended
+  after existing ones: n_msgs_w, twosided_frac, med_spread_ticks, med_mid,
+  rel_tick_bp, n_exec, cv_absr_tick, vartop10_absr_tick) so the
+  classification is reproducible from the summary CSV alone. Consequence
+  for scoring the LM: per-symbol comparison, the measurability rule applied
+  identically to model output, no credit or penalty on unmeasured
+  symbol-facts (19 symbols unmeasurable for flow memory on BX, pinned
+  names unmeasurable for tick clustering). A model matching pooled medians
+  while wrong per-symbol must fail, and now can.
+
 ## Blocked on you
 - (nothing) - resolved 2026-07-30:
   - LOBSTER samples: superseded. Real NASDAQ BX ITCH day landed in data/
@@ -478,3 +501,17 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   committed - no repo-worthy logic beyond what RESULTS.md states; the
   evidence CSVs live in out/cstnull/). tests/test_cst.cpp pins the
   generator mechanics. Gates green (0 warnings / ctest / 1M fuzz).
+- 2026-07-30 Per-symbol restructure (v3): characterised the 2a tick-time
+  clustering split across all 140 TRAIN+VAL symbol-days. Thinness
+  hypothesis REJECTED (no n threshold: zeros at n=250k, detection at
+  n=11.8k); the split is variance concentration - zero days have vartop10
+  median 0.98 vs 0.26 for significant days, and the VAL-day six share
+  vartop10 0.93-1.00 at 2-5 tick spreads while being among the most active
+  symbols. Three-way classification (rule in Decisions): 87 PRESENT / 4
+  ABSENT / 49 UNMEASURED; measured absence is rare and boring (OILX with
+  zero BX executions, IWB, MDY once each). stylized extended with covariate
+  columns, 7 days rerun (leading columns unchanged), RESULTS.md v3
+  per-symbol section supersedes the pooled-median structure, per-fact
+  uniform-vs-symbol-dependent classification recorded. Evidence:
+  out/multiday/persym_analysis.txt. Gates green (0 warnings / ctest / 1M
+  fuzz).
