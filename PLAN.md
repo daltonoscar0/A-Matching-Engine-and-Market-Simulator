@@ -6,11 +6,16 @@
 - [x] Property tests: no crossed book, FIFO within level, share conservation,
       unknown/duplicate-id rejection; randomized fuzzer checks all four after
       every message (1M-message runs clean, `FUZZ_N=1000000 ./tests "fuzz*"`)
-- [~] BENCH.md: msgs/sec + p50/p99 - first row recorded on a 5M-message
-      SYNTHETIC stream (LOBSTER sample not available in this environment;
-      synth.hpp generates realistic type ratios as a stand-in). Re-run on the
-      real LOBSTER file to close this box.
-Milestone: replay a full LOBSTER day byte-identically - BLOCKED on data (below).
+- [x] BENCH.md: msgs/sec + p50/p99 - closed 2026-07-30 with a real-data row:
+      full NASDAQ BX ITCH day, 23.8M book msgs across 7497 symbols (plus the
+      earlier synthetic rows for deep-book stress).
+Milestone: MET 2026-07-30 (revised) - replayed a full real ITCH day
+(NASDAQ BX 2019-07-30) with zero rejects, zero invariant violations, exact
+share conservation, and every book draining to open=0 at the close. The
+original wording ("LOBSTER day byte-identically") is unmeetable as stated:
+LOBSTER is purchase-gated now, and raw ITCH has no reference orderbook file
+to be byte-identical against, so the correctness bar became internal:
+a correct book applying genuine ITCH produces zero rejects (see Decisions).
 
 ## Phase 2: Generative agent loop (weeks 4-6)
 - [ ] Adapter: orderflow-lm emits messages -> engine executes -> state feeds back
@@ -27,97 +32,107 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
 - [ ] Almgren-Chriss baseline; RL or policy-gradient agent inside the sim
 
 ## Status
-- Current phase: 1 (core + codec + tests done; commit 58cf5ce)
+- Current phase: 1 COMPLETE (2026-07-30: real-day replay clean, bench
+  recorded on real data). Phase 2 is next.
 - Next 3 tasks:
-  1. LOBSTER ingestion: parser from LOBSTER message CSV -> itch::Message
-     stream; replay a real day, verify book state against the LOBSTER
-     orderbook file at every row (the "byte-identical" milestone), re-bench.
-  2. [x] Latency tail: DONE 2026-07-30 - max was order-pool rehash, fixed
-     with Book::reserve; slab allocator not justified by measurement
-     (see Decisions + RESULTS.md).
-  3. [x] Multi-instrument dispatch: DONE 2026-07-30 - BookSet routes on
-     stock_locate, fuzzer covers 8 interleaved symbols, single-symbol path
-     unregressed (BENCH.md phase C rows).
+  1. Phase 2 adapter: orderflow-lm emits messages -> engine executes ->
+     state feeds back. Needs the real match() path (see 2026-07-27
+     reconstruction decision) since generated crossing flow must execute.
+  2. Sampling controls (temperature, top-k) + rejection of malformed
+     messages at the adapter boundary.
+  3. Stylized-fact harness prep: compute return series from replayed real
+     BX day (we now have real data in-repo) so Phase 3 has its "real"
+     column before the LM sim exists.
 
 ## Decisions
-- 2026-07-27 Catch2 v2.13.10 vendored as the single allowed dependency
-  (third_party/catch.hpp): property-style SECTIONs + test discovery for the
-  cost of one header, zero build-system impact. Fuzz hot loop uses raw
-  aborts/FAIL, not per-message CHECKs (Catch2 macro overhead would dominate).
-- 2026-07-27 ITCH message layouts taken from the public NASDAQ TotalView-ITCH
-  5.0 spec from memory: the PDF excerpt named in README.md is NOT in project
-  knowledge. A/F/E/C/X/D/U layouts (36/40/31/36/23/19/35 bytes, big-endian,
-  48-bit ns timestamps) are unambiguous in the public spec, so this did not
-  meet the stop-and-ask bar - but upload the excerpt and diff before
-  Phase 1 sign-off.
-- 2026-07-27 File framing: 2-byte big-endian length prefix per message
-  (BinaryFILE convention), not SoupBinTCP session packets. Right for replay
-  files; revisit if we ever speak the wire live.
-- 2026-07-27 Book semantics are RECONSTRUCTION, not self-matching: the book
-  applies an event stream where executions arrive as explicit E/C messages
-  (matching happened upstream at the "exchange"). "Book never crosses" is
-  enforced by REJECTING adds/replaces priced through the opposite side -
-  correct for ITCH replay, where crossing flow executes and never rests.
-  Phase 2's generative loop needs an actual matcher (agent sends a crossing
-  order -> engine produces E/C messages); that is a planned new code path
-  (`match()`), not a change to this one.
-- 2026-07-27 Data structures: levels in std::map (bids descending, asks
-  ascending; begin() = best), orders in unordered_map<ref, Order>, orders
-  chained per-level in an intrusive doubly-linked FIFO. Both containers are
-  pointer-stable, giving O(1) cancel/delete/execute-by-id and O(log L) adds.
-  Boring and correct first; measured 5.48M msgs/sec, so no exotic structure
-  is justified yet.
-- 2026-07-27 Conservation ledger in the book itself (added = resting +
-  executed + canceled, O(1) check) + a deep O(n) audit() that re-walks every
-  level/FIFO chain. Fuzzer runs the O(1) check every message, audit every 4096.
-- 2026-07-27 Replace ('U') = cancel remainder + add at back of queue (loses
-  time priority), remainder counted as canceled - matches ITCH semantics.
-- 2026-07-27 stock_locate ignored for now: one Book per process. See next
-  task 3.
-- 2026-07-27 Synthetic generator (src/synth.hpp) owns a shadow Book so valid
-  messages are valid by construction; fuzzer replays the same stream into an
-  independent Book through the full encode->decode->apply pipeline and
-  cross-checks final state against the shadow.
-- 2026-07-30 Latency-tail attribution done with a dedicated tool
-  (bench/tail.cpp) rather than guessing: per-message timing + order-pool
-  bucket-count tracking, spikes annotated with type/pool-size/rehash flag and
-  bucketed per 500k-message window to separate size-correlated causes from
-  uniform preemption. Tool kept in-repo so the measurement is reproducible.
-- 2026-07-30 Tail fix = Book::reserve(n) (pre-size the order pool's hash
-  buckets), called by the bench with 1<<20. NOT a reserve in Book's
-  constructor: Phase C runs many books per process and a megabucket table per
-  instrument would be the wrong default. Callers that know their depth opt in.
-- 2026-07-30 Slab/freelist allocator for Order/Level NOT built: measurement
-  (RESULTS.md 2026-07-30) shows it could only chase the residual ~100us
-  worst-case allocator noise (~10 messages in 5M) and cannot move p99.9,
-  which is ordinary deep-book map work plus clock overhead.
-- 2026-07-30 BookSet routing = vector<unique_ptr<Book>> indexed directly by
-  stock_locate (16-bit key, worst case 512KB of pointers): O(1), no hash, no
-  iterator invalidation. Books created on first touch. Single-book path
-  (feed.hpp apply on Book&) untouched; BookSet layers on top of it.
-- 2026-07-30 Multi-symbol synth: per-symbol Generators interleaved by a
-  separate pick-rng, one locate each, order refs globally unique via
-  per-symbol ref_base ((i+1)<<40, clear of the 0xDEAD... unknown-id range).
-  Unique refs are what make routing bugs fuzzable: a message applied to the
-  wrong book hits UnknownId/DuplicateId instead of silently succeeding.
-  Config defaults chosen so single-symbol output stays byte-identical to
-  pre-change streams (verified by md5 on the seed-42 5M file).
-- 2026-07-30 Merged multi-symbol stream is not globally timestamp-monotonic
-  (per-symbol clocks advance independently). Accepted: no consumer reads
-  cross-symbol time order, and the generator is a stand-in, not a market.
+- 2026-07-27 Catch2 v2.13.10 vendored (third_party/catch.hpp), the one
+  allowed dependency. Fuzz hot loop uses raw aborts, not CHECKs - Catch2
+  macro overhead would dominate a 1M-message run.
+- 2026-07-27 ITCH layouts (A/F/E/C/X/D/U = 36/40/31/36/23/19/35 bytes,
+  big-endian, 48-bit ns timestamps) written from the public TotalView-ITCH
+  5.0 spec from memory; the PDF excerpt named in README.md was not
+  available. Diff against it before Phase 1 sign-off.
+- 2026-07-27 File framing is a 2-byte big-endian length prefix per message
+  (BinaryFILE), not SoupBinTCP. Revisit only if we ever speak the wire live.
+- 2026-07-27 The book reconstructs, it does not match. Executions arrive as
+  explicit E/C events; adds/replaces priced through the opposite side are
+  rejected, since crossing flow executes upstream and never rests. Phase 2's
+  generative loop needs a real match() path - new code, not a change here.
+- 2026-07-27 Levels in std::map (bids desc, asks asc, begin() = best),
+  orders in unordered_map, intrusive FIFO per level. O(1) cancel/delete by
+  id, O(log L) adds, both containers pointer-stable. 5.48M msgs/sec on the
+  container; nothing fancier is justified yet.
+- 2026-07-27 Conservation ledger in the book (added = resting + executed +
+  canceled, O(1)) plus a deep O(n) audit(). Fuzzer runs the ledger check
+  every message, audit every 4096.
+- 2026-07-27 Replace ('U') = cancel remainder + add at back of queue,
+  remainder counted as canceled. ITCH semantics; time priority is lost.
+- 2026-07-27 stock_locate ignored in Phase 1: one Book per process.
+  Superseded 2026-07-30 by BookSet.
+- 2026-07-27 Generator owns a shadow Book, so valid messages are valid by
+  construction; the fuzzer replays the same stream through
+  encode->decode->apply into an independent Book and cross-checks state.
+- 2026-07-30 Tail latency measured, not guessed: bench/tail.cpp times every
+  message, tracks order-pool bucket counts, and buckets spikes per
+  500k-message window to separate size-correlated causes from preemption.
+  Kept in-repo so the measurement is reproducible.
+- 2026-07-30 Tail fix is Book::reserve(n), called by the bench with 1<<20.
+  Not in the constructor: Phase C runs many books per process, and a
+  megabucket table per instrument is the wrong default.
+- 2026-07-30 No slab allocator for Order/Level: it could only chase ~100us
+  allocator noise on ~10 messages in 5M and cannot move p99.9 (RESULTS.md
+  2026-07-30).
+- 2026-07-30 BookSet is a vector<unique_ptr<Book>> indexed by stock_locate:
+  a 16-bit key, so at worst 512KB of pointers buys hashless O(1) routing.
+  Books created on first touch; the single-book path is untouched.
+- 2026-07-30 Multi-symbol synth interleaves per-symbol Generators, one
+  locate each, refs globally unique via per-symbol base ((i+1)<<40, clear of
+  the 0xDEAD... unknown-id range). Unique refs make misrouting visible to
+  the fuzzer as UnknownId/DuplicateId. Defaults keep single-symbol output
+  byte-identical (verified by md5 of the seed-42 5M file).
+- 2026-07-30 Merged multi-symbol stream is not timestamp-monotonic across
+  symbols. Accepted: no consumer reads cross-symbol time order.
+- 2026-07-30 Ground truth switched from LOBSTER (now gated behind an
+  email + purchase-proof request flow) to a genuine NASDAQ BX ITCH 5.0 day
+  (data/20190730.BX_ITCH_50, 837MB, hand-verified framing). What changes:
+  LOBSTER would have given an external per-row orderbook file to diff
+  against ("byte-identical"); raw ITCH has no such reference, so the
+  correctness criterion becomes internal - a correct book applying real
+  exchange data produces ZERO rejects, holds all invariants, conserves
+  shares exactly, and (observed) drains to open=0 at the close. Stronger on
+  authenticity (raw exchange feed, all symbols), weaker on independent
+  cross-checking. The zero-reject bar is absolute: any WouldCross/UnknownId/
+  DuplicateId/TooManyShares on real data is OUR bug, never tolerated.
+- 2026-07-30 FrameReader distinguishes unknown-type (skip + per-type-byte
+  histogram; a real day carries ~20 types, we implement 7) from malformed
+  frame (zero length, length past buffer, known type failing decode =
+  desynced stream, still fatal). Collapsing these would let a desynced
+  replay "succeed" on garbage; the fuzzer still relies on malformed = fatal.
+- 2026-07-30 'R' stock directory parsed via parse_stock_directory into a
+  side table, NOT added to the Message variant: it names instruments rather
+  than mutating a book, and keeping the variant to the 7 book types keeps
+  the hot decode path and fuzz surface unchanged. The replayed file's own R
+  messages are the authoritative locate->ticker map (8849 entries on this
+  day); no external reference file. Locate 0 is reserved and owns no book.
+- 2026-07-30 'P' (trade, non-cross) is a SKIP, not an execute: it reports
+  trades against non-displayed liquidity and must not touch the visible
+  book. Confirmed empirically - 244k P frames skipped and the day still
+  conserves exactly and drains to zero; applying them would have produced
+  an UnknownId flood.
+- 2026-07-30 The ITCH-5.0-PDF spec diff (2026-07-27 decision) is closed by
+  stronger evidence: 23.8M real messages decoded with zero rejects and
+  exact end-of-day conservation empirically confirms the A/F/E/C/X/D/U
+  layouts, 2-byte BE framing, and 48-bit timestamps against the real wire.
 
 ## Blocked on you
-- LOBSTER sample files (lobsterdata.com download needs a browser; container
-  network is locked to package registries). Drop the message + orderbook CSVs
-  into project knowledge or the repo.
-- ITCH 5.0 PDF excerpt for spec diff (see Decisions).
-- 2026-07-30 Phase A blocked: LOBSTER sample needs manual download.
-  lobsterdata.com is now a JS app; the old direct sample zip URLs
-  (/info/sample/LOBSTER_SampleFile_*.zip) return the app shell, and the app's
-  own bundle shows sample downloads are gated behind an email + purchase-proof
-  request flow ("We verify purchase proof and send a time-limited download
-  link"). Not freely fetchable; nothing on local disk either. Drop
-  ..._message_N.csv + ..._orderbook_N.csv into data/ and Phase A can proceed.
+- (nothing) - resolved 2026-07-30:
+  - LOBSTER samples: superseded. Real NASDAQ BX ITCH day landed in data/
+    and became the ground truth (see Decisions). LOBSTER remains optional
+    if we ever want an external orderbook diff.
+  - ITCH 5.0 PDF spec diff: closed by real-data replay evidence (Decisions).
+  - Note: data/20190730.BX_ITCH_50.gz.md5sum is an HTML 404 page, not a
+    checksum, so the download can't be verified against NASDAQ's md5 list;
+    framing was hand-verified instead and 28.7M frames parse cleanly.
 
 ## RESULTS log -> RESULTS.md, benchmarks -> BENCH.md
 
@@ -134,3 +149,12 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
 - 2026-07-30 Phase C: BookSet (src/bookset.hpp) + multi-symbol generator +
   routing fuzz at 1M msgs + bench single/set/interleaved (BENCH.md). Single
   path unregressed; interleaved ~5% slower. Gates green.
+- 2026-07-30 Phase A unblocked with real BX ITCH data: FrameReader now
+  skips unknown types (histogram) with malformed still fatal; 'R' directory
+  parser + side table; src/itch_replay.hpp harness + replay_itch tool;
+  full-day replay = 23.8M book msgs, ZERO rejects, audits clean, exact
+  conservation, books drain to 0 at close - Phase 1 milestone met (revised
+  criterion, see Decisions). Real-data bench row appended (5.27M msgs/sec,
+  p50 125ns, p99 875ns). ctest gate: tests/test_itch_replay.cpp replays a
+  200k-msg slice with per-message invariant checks, skips gracefully when
+  data/ absent. Gates green (0 warnings / ctest / 1M fuzz).

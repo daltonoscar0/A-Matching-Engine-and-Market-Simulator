@@ -15,7 +15,7 @@ target_include_directories(exchange_core PUBLIC src)
 # Tests (Catch2 v2.13.10 vendored as a single header in third_party/)
 add_executable(tests
   tests/main.cpp tests/test_book.cpp tests/test_bookset.cpp
-  tests/test_codec.cpp tests/test_fuzz.cpp)
+  tests/test_codec.cpp tests/test_fuzz.cpp tests/test_itch_replay.cpp)
 target_link_libraries(tests PRIVATE exchange_core)
 
 enable_testing()
@@ -28,3 +28,5 @@ add_executable(bench_replay bench/replay.cpp)
 target_link_libraries(bench_replay PRIVATE exchange_core)
 add_executable(bench_tail bench/tail.cpp)
 target_link_libraries(bench_tail PRIVATE exchange_core)
+add_executable(replay_itch bench/replay_itch.cpp)
+target_link_libraries(replay_itch PRIVATE exchange_core)

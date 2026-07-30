@@ -138,3 +138,110 @@ TEST_CASE("codec: framed stream round-trip via FrameReader") {
     while (bad.next()) {}
     CHECK(bad.error);
 }
+
+namespace {
+// Append one frame with an arbitrary body (for unknown-type / malformed
+// stream construction).
+void frame_raw(std::vector<uint8_t>& wire, const uint8_t* body, uint16_t n) {
+    size_t at = wire.size();
+    wire.resize(at + 2 + n);
+    put_u16(wire.data() + at, n);
+    std::memcpy(wire.data() + at + 2, body, n);
+}
+}  // namespace
+
+TEST_CASE("framing: unknown types are skipped and counted, not fatal") {
+    AddOrder a; a.side = 'B'; a.shares = 100; a.price = 1000;
+    a.order_ref = 1; a.stock = {'X',' ',' ',' ',' ',' ',' ',' '};
+    OrderDelete d; d.order_ref = 1;
+
+    std::vector<uint8_t> wire;
+    uint8_t sys[12] = {'S', 0,0, 0,0, 0,0,0,0,0,0, 'O'};   // system event
+    uint8_t trade[44] = {'P'};                              // non-cross trade
+    uint8_t dir[39] = {'R'};                                // stock directory
+    frame_raw(wire, sys, sizeof sys);
+    frame_raw(wire, dir, sizeof dir);
+    encode_framed(Message{a}, wire);
+    frame_raw(wire, trade, sizeof trade);
+    frame_raw(wire, sys, sizeof sys);
+    encode_framed(Message{d}, wire);
+
+    FrameReader rd{wire.data(), wire.size()};
+    std::vector<char> seen;
+    while (auto m = rd.next()) seen.push_back(type_of(*m));
+    CHECK(!rd.error);
+    REQUIRE(seen.size() == 2);
+    CHECK(seen[0] == 'A');
+    CHECK(seen[1] == 'D');
+    CHECK(rd.skipped == 4);
+    CHECK(rd.skips[uint8_t('S')] == 2);
+    CHECK(rd.skips[uint8_t('P')] == 1);
+    CHECK(rd.skips[uint8_t('R')] == 1);
+}
+
+TEST_CASE("framing: malformed frames stay fatal, never skipped") {
+    AddOrder a; a.side = 'B'; a.shares = 100; a.price = 1000;
+    a.order_ref = 1; a.stock = {'X',' ',' ',' ',' ',' ',' ',' '};
+
+    SECTION("zero-length frame") {
+        std::vector<uint8_t> wire;
+        encode_framed(Message{a}, wire);
+        wire.push_back(0); wire.push_back(0);          // len = 0
+        encode_framed(Message{a}, wire);
+        FrameReader rd{wire.data(), wire.size()};
+        CHECK(rd.next().has_value());                  // first A decodes
+        CHECK(!rd.next().has_value());                 // then hard stop
+        CHECK(rd.error);
+    }
+    SECTION("unknown type whose length runs past the buffer") {
+        std::vector<uint8_t> wire;
+        uint8_t junk[4] = {'Q', 1, 2, 3};
+        frame_raw(wire, junk, sizeof junk);
+        wire[0] = 0xFF; wire[1] = 0xFF;                // lie about length
+        FrameReader rd{wire.data(), wire.size()};
+        CHECK(!rd.next().has_value());
+        CHECK(rd.error);
+        CHECK(rd.skipped == 0);
+    }
+    SECTION("known type with wrong length") {
+        std::vector<uint8_t> wire;
+        encode_framed(Message{a}, wire);
+        // Shrink the A frame's declared length: still in-buffer, wrong size.
+        put_u16(wire.data(), LEN_A - 1);
+        wire.resize(2 + LEN_A - 1);
+        FrameReader rd{wire.data(), wire.size()};
+        CHECK(!rd.next().has_value());
+        CHECK(rd.error);
+    }
+    SECTION("known type with bad enum value") {
+        std::vector<uint8_t> wire;
+        encode_framed(Message{a}, wire);
+        wire[2 + 19] = 'Q';                            // side neither B nor S
+        FrameReader rd{wire.data(), wire.size()};
+        CHECK(!rd.next().has_value());
+        CHECK(rd.error);
+    }
+}
+
+TEST_CASE("stock directory: parse the real-world 'R' layout") {
+    // Byte-for-byte the second frame of data/20190730.BX_ITCH_50 (verified
+    // by hand against the file): locate 1, stock "A", round lot 100.
+    const uint8_t r[39] = {
+        'R',  0x00,0x01, 0x00,0x00, 0x0a,0x65,0xaf,0x1f,0xc0,0xcf,
+        'A',' ',' ',' ',' ',' ',' ',' ',
+        'N', ' ', 0x00,0x00,0x00,0x64, 'N', 'C',
+        'Z',' ', 'P', 'N', ' ', '1', 'N', 0x00,0x00,0x00,0x00, 'N'};
+    auto d = parse_stock_directory(r, sizeof r);
+    REQUIRE(d.has_value());
+    CHECK(d->h.stock_locate == 1);
+    CHECK(std::string(d->stock.data(), 8) == "A       ");
+    CHECK(d->market_category == 'N');
+    CHECK(d->financial_status == ' ');
+    CHECK(d->round_lot == 100);
+    CHECK(d->round_lots_only == 'N');
+    CHECK(d->issue_class == 'C');
+
+    CHECK(!parse_stock_directory(r, 38).has_value());
+    uint8_t wrong[39]; std::memcpy(wrong, r, 39); wrong[0] = 'A';
+    CHECK(!parse_stock_directory(wrong, 39).has_value());
+}

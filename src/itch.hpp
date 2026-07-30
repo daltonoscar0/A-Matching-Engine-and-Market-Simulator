@@ -107,6 +107,18 @@ constexpr size_t LEN_A = 36, LEN_F = 40, LEN_E = 31, LEN_C = 36,
                  LEN_X = 23, LEN_D = 19, LEN_U = 35;
 constexpr size_t MAX_MSG_LEN = LEN_F;
 
+// True for the 7 book-affecting types this codec decodes. A real ITCH day
+// carries ~20 types; everything else is metadata/trade-report traffic that
+// FrameReader skips (counted) rather than decodes.
+inline bool is_book_type(char t) {
+    switch (t) {
+        case 'A': case 'F': case 'E': case 'C': case 'X': case 'D': case 'U':
+            return true;
+        default:
+            return false;
+    }
+}
+
 inline char type_of(const Message& m) {
     struct V {
         char operator()(const AddOrder&) const           { return 'A'; }
@@ -133,13 +145,42 @@ void encode_framed(const Message& m, std::vector<uint8_t>& buf);
 // bad enum value, or length mismatch.
 std::optional<Message> decode(const uint8_t* p, size_t len);
 
-// Streaming reader over a framed buffer. Returns nullopt at clean EOF;
-// sets `error` on truncation or malformed message.
+// ---------------------------------------------------------- stock directory
+// 'R' stock directory, 39 bytes on the wire. Not part of Message: it names
+// instruments (locate -> ticker) instead of mutating a book, so it is parsed
+// on demand rather than decoded in the hot path. Subset of fields we use.
+struct StockDirectory {
+    Header   h;                       // h.stock_locate is the locate code
+    Stock    stock = {' ',' ',' ',' ',' ',' ',' ',' '};
+    char     market_category  = ' ';
+    char     financial_status = ' ';
+    uint32_t round_lot        = 0;
+    char     round_lots_only  = ' ';
+    char     issue_class      = ' ';
+};
+constexpr size_t LEN_R = 39;
+// Parses one 'R' message body. nullopt on type or length mismatch.
+std::optional<StockDirectory> parse_stock_directory(const uint8_t* p,
+                                                    size_t len);
+
+// Streaming reader over a framed buffer. next() returns the next decoded
+// book-type message and transparently skips frames whose type byte is not
+// one of the 7 we implement, counting them per type byte in `skips`.
+//
+// Two failure modes, deliberately NOT collapsed:
+//   unknown type, sane length  -> skip and continue (expected on real data)
+//   malformed frame            -> fatal: zero length, length past the end
+//     of the buffer, or a KNOWN type that fails decode (wrong length / bad
+//     enum). That is how a desynced stream shows up; skipping past it would
+//     let us "successfully" replay garbage.
+// Returns nullopt at clean EOF; `error` distinguishes EOF from fatal.
 struct FrameReader {
     const uint8_t* data;
     size_t size;
     size_t pos   = 0;
     bool   error = false;
+    uint64_t skipped = 0;                  // total frames skipped
+    std::array<uint64_t, 256> skips{};     // skipped frames per type byte
     std::optional<Message> next();
 };
 

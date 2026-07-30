@@ -1,23 +1,15 @@
-// book.hpp - Limit order book with price-time priority.
+// Limit order book, price-time priority. Prices are ITCH fixed point
+// (uint32_t, 4 implied decimals), one book per instrument.
 //
-// Design (see PLAN.md "Decisions"):
-//   * One book per instrument. Prices are ITCH fixed-point uint32_t
-//     (4 implied decimals).
-//   * Levels live in std::map keyed by price - bids descending, asks
-//     ascending - so begin() is always the best level. Map nodes are
-//     pointer-stable, which the intrusive order list relies on.
-//   * Orders live in an unordered_map<order_ref, Order> (also
-//     pointer-stable) and are chained into an intrusive doubly-linked
-//     FIFO per level: O(1) cancel/delete by id, strict time priority
-//     within a level.
-//   * The book *applies* an ITCH-style event stream (reconstruction
-//     semantics): executes/cancels reference explicit order ids. It does
-//     not self-match; instead it *rejects* any add/replace that would
-//     cross, which is exactly the invariant "the book never crosses"
-//     since crossing liquidity would have executed at the exchange
-//     before ever resting.
-//   * Conservation ledger: shares_added == shares_resting +
-//     shares_executed + shares_canceled at all times.
+// Levels sit in a std::map keyed by price, bids descending and asks
+// ascending, so begin() is the best level. Orders sit in an unordered_map
+// by ref and are chained into an intrusive FIFO per level. Both containers
+// are pointer-stable; the intrusive links depend on that.
+//
+// This book reconstructs, it does not match: executes and cancels arrive
+// as explicit events, and an add or replace priced through the opposite
+// side is rejected - crossing flow executes at the exchange, it never
+// rests. Ledger invariant: added == resting + executed + canceled.
 #pragma once
 #include <cstdint>
 #include <functional>
@@ -80,6 +72,8 @@ public:
         return !bids_.empty() && !asks_.empty() && best_bid() >= best_ask();
     }
     size_t   open_orders()   const { return orders_.size(); }
+    size_t   bid_levels()    const { return bids_.size(); }
+    size_t   ask_levels()    const { return asks_.size(); }
     // Diagnostic: hash-table bucket count of the order pool (rehash tracking).
     size_t   order_buckets() const { return orders_.bucket_count(); }
     // Pre-size the order pool to avoid rehashes while it grows to `expected`.

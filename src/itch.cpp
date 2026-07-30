@@ -167,15 +167,43 @@ std::optional<Message> decode(const uint8_t* p, size_t len) {
     }
 }
 
+std::optional<StockDirectory> parse_stock_directory(const uint8_t* p,
+                                                    size_t len) {
+    if (len != LEN_R || char(p[0]) != 'R') return std::nullopt;
+    StockDirectory d;
+    d.h = get_header(p);
+    std::memcpy(d.stock.data(), p + 11, 8);
+    d.market_category  = char(p[19]);
+    d.financial_status = char(p[20]);
+    d.round_lot        = get_u32(p + 21);
+    d.round_lots_only  = char(p[25]);
+    d.issue_class      = char(p[26]);
+    return d;
+}
+
 std::optional<Message> FrameReader::next() {
-    if (pos == size) return std::nullopt;          // clean EOF
-    if (size - pos < 2) { error = true; return std::nullopt; }
-    uint16_t len = get_u16(data + pos);
-    if (size - pos - 2 < len) { error = true; return std::nullopt; }
-    auto m = decode(data + pos + 2, len);
-    if (!m) { error = true; return std::nullopt; }
-    pos += 2 + len;
-    return m;
+    while (pos != size) {
+        if (size - pos < 2) { error = true; return std::nullopt; }
+        uint16_t len = get_u16(data + pos);
+        // len == 0 or running past the buffer means a desynced/truncated
+        // stream, not an unimplemented message: fatal.
+        if (len == 0 || size - pos - 2 < len) {
+            error = true;
+            return std::nullopt;
+        }
+        const uint8_t* body = data + pos + 2;
+        if (!is_book_type(char(body[0]))) {        // unknown type: skip
+            ++skips[body[0]];
+            ++skipped;
+            pos += 2 + len;
+            continue;
+        }
+        auto m = decode(body, len);                // known type must decode
+        if (!m) { error = true; return std::nullopt; }
+        pos += 2 + len;
+        return m;
+    }
+    return std::nullopt;                           // clean EOF
 }
 
 }  // namespace itch
