@@ -63,21 +63,73 @@ consume. Book state for PRICE_OFF comes from LOBSTER's orderbook file
 | Halt (7) | `H` (trading action) | halt/resume indicator; book-unaffected | **adapter bridges**: HALT/RESUME are specials, not tuples. The exchange currently SKIPS `H`; to tokenize halts, stop skipping and forward the action code. |
 | — | **`U` (replace)** | **no LOBSTER equivalent.** ITCH sends one message carrying `orig_ref` + `new_ref` + new size/price; LOBSTER represents the same economic act as two rows (Delete then Add) | **DESIGN FORK — see below.** |
 
-### The `U` fork (the one real representation decision)
+### The `U` fork (a representation choice with a distributional consequence)
 
-ITCH `U` has no LOBSTER analogue and no token slot. Two options:
+ITCH `U` has no LOBSTER analogue and no token slot, and expanding it changes
+**what the model can express**, not just how it is encoded, so the trade-off
+is quantified here before a recommendation.
 
-- **(recommended) Expand in the adapter to Delete + Add**, matching both
-  LOBSTER's own representation and the exchange's reconstruction semantics
-  (`U` = cancel remainder + add at back of queue, PLAN.md 2026-07-27). The
-  TYPE vocabulary needs **no new token**; one `U` becomes two events sharing a
-  timestamp (so the second gets `DT_ZERO`). This keeps any future
-  BX-trained vocab identical in shape to the LOBSTER one and is the lower-risk
-  path.
-- **(not recommended) Add a `TYPE_REPLACE` token.** Cleaner provenance, but it
-  is a vocabulary change (breaks the frozen 52-id manifest, bumps
-  `kBinVersion`) and forces retraining. Only worth it if a downstream probe
-  needs to see replaces as atomic.
+**How much `U` is there? (measured, replay_itch on 3 TRAIN days.)** `U` is
+**5.9% of book messages** pooled (4.6% on the calm 2019-01-30, 8.7% on the
+volatile 2019-05-30, 6.5% on 2019-12-30). Note this is about **half** the
+"~12%" figure quoted in the task; the 12% instead matches the *post-expansion*
+number below, which is the likelier source of that estimate.
+
+| day | book msgs | `U` | `U` % | D/A-pair % of expanded event stream |
+|---|---|---|---|---|
+| 2019-01-30 | 74.2M | 3.39M | 4.6% | 8.7% |
+| 2019-05-30 | 30.1M | 2.61M | 8.7% | 16.0% |
+| 2019-12-30 | 26.7M | 1.74M | 6.5% | 12.2% |
+| pooled | 131.0M | 7.74M | 5.9% | 11.2% |
+
+Under Delete+Add expansion each `U` becomes two events, so the tokenized event
+stream grows by `f_U`, and the share of it that is a `U`-derived Delete or Add
+half is `2·f_U/(1+f_U)` = **11.2% pooled** (8.7-16% by day). Equivalently,
+after expansion ~9-16% of all Deletes are `U`-cancels and ~9-16% of all Adds
+are `U`-re-adds whose atomicity the model must learn rather than inherit.
+
+**The expressivity cost.** In real BX flow the cancel and re-add of a `U` are
+atomic - the feed never contains the cancel-without-its-re-add. After
+expansion the model, generating autoregressively, **can** emit a Delete not
+followed by its paired Add, or an Add with no preceding Delete: sequences real
+flow never contains. So expansion strictly enlarges the expressible space by
+~11% of events' worth of pairing structure the model must reproduce
+statistically instead of getting for free.
+
+**Can the adapter enforce pairing at generation time? No.** Both halves decode
+to a plain `TYPE_DELETE` / `TYPE_ADD` with no marker distinguishing a
+standalone `D` from the delete-half of a `U`, or a standalone `A` from a
+re-add. The adapter therefore has no signal on which to reject an unpaired
+half - there is no way to tell. Each half is individually valid (a real
+delete, a real add), so the **book stays valid** (no invariant violation); the
+cost is purely distributional - the model can break the atomic-replace
+correlation and produce cancel/re-add timing that reality does not. Crucially,
+this does **not** touch the two scoring facts: replaces generate no aggressor
+signs (flow-sign memory is E/C-driven), and the affected quantity is
+cancel/replace timing, which sits among the sanity checks, not the scored
+facts.
+
+**What `TYPE_REPLACE` costs, concretely.** It does **not** absorb cleanly into
+the factored 5-tuple. A replace carries **two** locations - the original order
+to modify and the new price - but the tuple has a single `PRICE_OFF` slot, so
+`TYPE_REPLACE` would force a **structural change to the tuple** (a sixth field
+for the original level, or a two-token convention), not merely a vocab
+addition. On top of that it breaks the frozen 52-id manifest and bumps
+`kBinVersion`. The retrain requirement is **not** a differentiator - both
+options already require a from-scratch BX run because the SIZE/DT bins refit -
+but the tuple-structure change is extra redesign for a distinction the scored
+facts do not need.
+
+**Recommendation: EXPAND to Delete+Add.** It is the natural fit for the
+factored structure (two tuples carry the two locations that one tuple cannot),
+it needs no vocab or tuple change, and its one real cost - unpaired-half
+expressivity - lands entirely on sanity-check quantities, not on flow-sign
+memory or volatility clustering. Caveat to log if this is chosen: the model
+must **learn** replace-atomicity (a `DT_ZERO` delete followed by a `DT_ZERO`
+same-side add), so post-hoc measure how often it emits that pattern vs.
+reality; if replace-timing fidelity ever turns out to matter for a specific
+probe, revisit `TYPE_REPLACE` with an explicit six-field tuple then. Decision
+is the user's; not implemented here.
 
 Either way this is an **adapter/representation choice**, not a parsing
 obstacle. Recommend expansion; flagged here so it is chosen, not defaulted.

@@ -528,6 +528,23 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   target-moving - it is not a silent redo. Until the final pass, 20181228
   and 20200130 stay sealed for every purpose.
 
+- 2026-07-30 (U fork, quantified) Measured `U` on 3 TRAIN days (replay_itch):
+  5.9% of book messages pooled (4.6-8.7% by day), NOT the ~12% the task
+  estimated - that 12% matches the post-expansion figure (D/A pair-halves =
+  11.2% of the expanded event stream). Delete+Add expansion lets the model
+  emit unpaired deletes/adds that real (atomic-replace) BX flow never
+  contains, and the adapter CANNOT enforce pairing (both halves decode to
+  plain D/A with no marker) - but each half is individually valid so the
+  book stays correct, and the cost is confined to cancel/replace TIMING, a
+  sanity-check quantity: replaces generate no aggressor signs, so flow-sign
+  memory (the scored fact) is untouched. TYPE_REPLACE does NOT absorb into
+  the factored 5-tuple (a replace has two locations - original + new - vs one
+  PRICE_OFF slot), so it forces a structural tuple change, not just a vocab
+  add; retrain is required either way (bins refit). Recommendation logged in
+  docs/FORMAT_RECONCILIATION.md: EXPAND to Delete+Add; revisit TYPE_REPLACE
+  with a 6-field tuple only if replace-timing fidelity later matters for a
+  probe. Direction is the user's; not implemented.
+
 ## Blocked on you
 - (nothing) - resolved 2026-07-30:
   - LOBSTER samples: superseded. Real NASDAQ BX ITCH day landed in data/
