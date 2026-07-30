@@ -43,17 +43,17 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
 - [ ] Almgren-Chriss baseline; RL or policy-gradient agent inside the sim
 
 ## Status
-- Current phase: 1 COMPLETE (2026-07-30: real-day replay clean, bench
-  recorded on real data). Phase 2 is next.
+- Current phase: 2 (engine side ready: match() landed 2026-07-30; the
+  adapter to orderflow-lm is the remaining Phase 2 structural work).
 - Next 3 tasks:
-  1. Phase 2 adapter: orderflow-lm emits messages -> engine executes ->
-     state feeds back. Needs the real match() path (see 2026-07-27
-     reconstruction decision) since generated crossing flow must execute.
+  1. Phase 2 adapter: orderflow-lm emits messages -> match_submit executes
+     -> emitted stream feeds back. The engine side exists (src/match.hpp);
+     what remains is the LM-facing loop and message validation.
   2. Sampling controls (temperature, top-k) + rejection of malformed
      messages at the adapter boundary.
-  3. Stylized-fact harness prep: DONE 2026-07-30 (tools/stylized; Phase 3
-     "real" column in RESULTS.md). Follow-up when convenient: more ITCH
-     days for the baseline.
+  3. Multi-day stylized-facts baseline: process the 8 additional BX days in
+     data/ through tools/stylized, report cross-day medians so the "real"
+     column is no longer one draw.
 
 ## Decisions
 - 2026-07-27 Catch2 v2.13.10 vendored (third_party/catch.hpp), the one
@@ -194,6 +194,38 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   its mid can be stale or wide relative to the NBBO, and one day is one
   draw. The stylized-facts table is the facts on THIS venue THIS day - a
   first baseline, not validated empirical ground truth.
+- 2026-07-30 (Step 3) match() structure: a new entry point ON Book
+  (Book::match), not a wrapper class - matching needs FIFO-head and
+  best-level access the public API doesn't expose, and building it from the
+  validated primitives (execute() per fill, add() for the remainder) means
+  the ledger and removal logic are shared, not duplicated. The
+  reconstruction path is untouched; both coexist and all prior tests pass
+  unchanged. Emission lives in src/match.hpp (match_submit), the mirror of
+  feed.hpp: feed applies decided executions, match_submit decides and
+  reports them.
+- 2026-07-30 (Step 3) Fill price = the RESTING order's price, price
+  improvement accrues to the aggressor (the easy-to-invert convention;
+  pinned by a dedicated property test on both sides). Limit remainders rest
+  at their own limit via add(); market remainders are canceled and emit
+  nothing - the order never rested, so there is no 'D' to send and it
+  appears in no ledger. Emitted fills are always 'E', never 'C': every fill
+  here executes at the resting display price, and ITCH reserves 'C' for
+  executions away from display, which this engine never produces.
+- 2026-07-30 (Step 3) No self-trade prevention, logged deliberately: in a
+  single-agent simulation everything is nominally a self-trade, so STP
+  would either no-op or forbid all matching. This becomes a REAL design
+  question if Phase 4 puts a second agent in the sim - revisit then
+  (cancel-oldest vs cancel-newest vs decrement semantics).
+- 2026-07-30 (Step 3) Crossing replaces are out of scope for match(): the
+  Phase 2 adapter decomposes a replace that would cross into cancel + new
+  aggressive order. The reconstruction path's WouldCross reject on U stays
+  authoritative for resting-side modifies.
+- 2026-07-30 (Step 3) The strong test (emit -> encode -> decode ->
+  reconstruct -> byte-identical fingerprint) was mutation-verified: an
+  emit bug invisible to every per-match assertion (A carrying the original
+  size instead of the remainder - the per-match checks only type-check the
+  A) is caught by the reconstruction replay within ~40 messages
+  (WouldCross). That is the bug class this test exists for.
 
 ## Blocked on you
 - (nothing) - resolved 2026-07-30:
@@ -251,3 +283,14 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   reclassified as estimator failures (2b: median 2.59 -> 2.95), windowed
   sign collapse (2c: lag-1 0.42 -> 0.27, inside Lillo-Farmer 0.2-0.3).
   RESULTS.md addendum row + section; original table untouched. Gates green.
+- 2026-07-30 Step 3: match() path landed - Book::match (price-time walk,
+  resting-price fills, limit remainder rests / market remainder canceled)
+  + src/match.hpp emission (E per fill + A for remainder, same wire format
+  the LM emits). tests/test_match.cpp: 8 property tests with an
+  independent-oracle fill check, plus the strong test: 1M generated
+  matches, full emitted stream (A/E/X/D/U; C never emitted by design)
+  replayed through the validated reconstruction path into a fresh Book,
+  end state byte-for-byte identical (fingerprint compare); zero rejects,
+  mutation-verified (see Decisions). bench_match: 4.72M matches/sec,
+  crossing p50 167ns / p99 792ns / p99.9 2000ns (BENCH.md row; not
+  comparable to replay rows). Gates green incl. the new fuzz at 1M.

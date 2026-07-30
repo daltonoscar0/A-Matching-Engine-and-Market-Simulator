@@ -1,5 +1,6 @@
 #include "book.hpp"
 
+#include <cstdlib>
 #include <sstream>
 
 namespace lob {
@@ -147,6 +148,51 @@ Result Book::replace(uint64_t orig_ref, uint64_t new_ref,
     shares_added_   += shares;
     shares_resting_ += shares;
     return Result::Ok;
+}
+
+MatchOutcome Book::match(uint64_t ref, Side side, uint32_t shares,
+                         uint32_t limit, bool market,
+                         std::vector<Fill>& fills) {
+    fills.clear();
+    MatchOutcome out;
+    if (shares == 0)        { out.result = Result::ZeroShares;  return out; }
+    if (orders_.count(ref)) { out.result = Result::DuplicateId; return out; }
+
+    uint32_t remaining = shares;
+    while (remaining > 0) {
+        // Re-fetch the best opposite level each round: the previous fill may
+        // have emptied and erased it.
+        const Level* best;
+        if (side == Side::Buy) {
+            if (asks_.empty()) break;
+            best = &asks_.begin()->second;
+            if (!market && best->price > limit) break;
+        } else {
+            if (bids_.empty()) break;
+            best = &bids_.begin()->second;
+            if (!market && best->price < limit) break;
+        }
+        Order& o = *best->head;                       // oldest at best price
+        uint32_t fill = remaining < o.shares ? remaining : o.shares;
+        fills.push_back({o.ref, fill, o.price});      // resting price
+        // The validated reconstruction primitive does the removal and the
+        // ledger; a failure here is a broken internal invariant, not input.
+        if (execute(o.ref, fill) != Result::Ok) std::abort();
+        remaining -= fill;
+    }
+    out.filled = shares - remaining;
+
+    if (remaining > 0) {
+        if (market) {
+            out.canceled = remaining;                 // no resting market orders
+        } else {
+            // Cannot cross: the walk only stopped because the best opposite
+            // price no longer reaches `limit` (or the side emptied).
+            if (add(ref, side, remaining, limit) != Result::Ok) std::abort();
+            out.rested = remaining;
+        }
+    }
+    return out;
 }
 
 const Order* Book::find(uint64_t ref) const {

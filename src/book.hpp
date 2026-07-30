@@ -6,16 +6,26 @@
 // by ref and are chained into an intrusive FIFO per level. Both containers
 // are pointer-stable; the intrusive links depend on that.
 //
-// This book reconstructs, it does not match: executes and cancels arrive
-// as explicit events, and an add or replace priced through the opposite
-// side is rejected - crossing flow executes at the exchange, it never
-// rests. Ledger invariant: added == resting + executed + canceled.
+// Two entry paths share this structure:
+//   RECONSTRUCTION (add/execute/cancel/remove/replace): executes and
+//     cancels arrive as explicit events from a real feed; an add or replace
+//     priced through the opposite side is rejected - crossing flow executed
+//     at the exchange, it never rests. Validated against a full real ITCH
+//     day (zero rejects); do not change its semantics.
+//   MATCHING (match): the Phase 2 inverse - an incoming aggressive order
+//     walks the opposite side in price-time priority and the engine DECIDES
+//     the fills. Built on the same primitives (execute + add), so the
+//     ledger invariant is shared: added == resting + executed + canceled.
+//     The aggressor's filled shares never enter the ledger - they never
+//     rest; only the resting side's executions are counted, exactly as a
+//     real feed reports them.
 #pragma once
 #include <cstdint>
 #include <functional>
 #include <map>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace lob {
 
@@ -53,6 +63,23 @@ struct Level {
     Order*   tail         = nullptr;  // newest
 };
 
+// One fill decided by match(). The price is the RESTING order's price:
+// price improvement accrues to the aggressor.
+struct Fill {
+    uint64_t resting_ref = 0;
+    uint32_t shares      = 0;
+    uint32_t price       = 0;
+};
+
+struct MatchOutcome {
+    Result   result   = Result::Ok;  // validation failures; fills untouched
+    uint32_t filled   = 0;           // total shares crossed, == sum of fills
+    uint32_t rested   = 0;           // limit remainder now resting under ref
+    uint32_t canceled = 0;           // market remainder dropped (never rested,
+                                     //   so it appears in no ledger and emits
+                                     //   no message)
+};
+
 class Book {
 public:
     // --- event application -------------------------------------------------
@@ -62,6 +89,16 @@ public:
     Result remove(uint64_t ref);                            // D
     Result replace(uint64_t orig_ref, uint64_t new_ref,
                    uint32_t shares, uint32_t price);        // U
+
+    // --- matching (Phase 2 path; reconstruction above is untouched) --------
+    // Match an incoming aggressive order against the opposite side in strict
+    // price-time priority (best price first, oldest first within a level).
+    // Fills execute at the RESTING order's price. A limit order's unfilled
+    // remainder rests at `limit`; a market order's remainder is canceled
+    // (`market` = true; `limit` is then ignored). Fills are appended to
+    // `fills` (cleared first). No self-trade prevention (see PLAN.md).
+    MatchOutcome match(uint64_t ref, Side side, uint32_t shares,
+                       uint32_t limit, bool market, std::vector<Fill>& fills);
 
     // --- queries -----------------------------------------------------------
     const Order* find(uint64_t ref) const;
