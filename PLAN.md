@@ -437,6 +437,97 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   engine, since the engine would accept them; thresholds are AdapterConfig
   fields and are training diagnostics, not correctness limits.
 
+- 2026-07-30 PRE-REGISTRATION of the headline real-vs-LM-vs-null table.
+  Written and committed ALONE, before any LM exists, so the timestamp
+  establishes it predates the model. This is the last unwritten
+  methodological choice and the one where the temptation to move the target
+  will be highest, so it is fixed now. Nothing below may be revised once an
+  LM has produced TEST output except by a new dated Decision that names this
+  one and states what changed and why.
+
+  (a) DATA PER COLUMN. All three columns are computed on the sealed TEST
+  set, and only TEST:
+    - real-TEST: tools/stylized run directly on the 2 TEST days
+      (20181228 high-vol, 20200130 calm), via the override flag. Measured,
+      not simulated.
+    - null-TEST: CST calibrated on the 6 TRAIN days ONLY (already done,
+      out/cstnull/calib_*.csv), simulated fresh, run through the identical
+      stylized pipeline. The null is a TRAIN-calibrated memoryless floor
+      evaluated against TEST reality - it never sees TEST. 7 seeds.
+    - LM-TEST: model trained on TRAIN, all hyperparameters AND sampling
+      temperature/top-k chosen on VAL (20190730) - never TEST - then sampled
+      fresh and run through the same stylized pipeline. TEST real flow is
+      never shown to the model. >= 7 sampling seeds. The LM's data loader
+      MUST call dataset::enforce(); TEST is reachable only in this one final
+      pass.
+    Justification for all-on-TEST: the question is whether the LM reproduces
+    HELD-OUT reality, not TRAIN reality it could memorise; the null and LM
+    are both TRAIN-fit and TEST-evaluated, so the three columns are compared
+    on the same held-out draws.
+
+  (b) DAYS / SEEDS / SPREAD. 2 TEST days, scored per day (NOT pooled: the two
+  are deliberately different regimes). Null 7 seeds, LM >= 7 seeds. Per
+  (symbol, fact) the reported statistic is the cross-seed / cross-day MEDIAN;
+  the seed spread is reported as a min-max envelope and is ESTIMATOR NOISE,
+  not structure (the flow slope on ~1k signs fits the log of sampling
+  noise - CST seed row confirms this), and is used only to build the null
+  envelope in (e), never interpreted as a finding.
+
+  (c) SCORING FACTS. Locked scoring fact: FLOW-SIGN MEMORY - per-symbol
+  ACF(1) (1ms collapse) and log-log decay slope over lags 1-100. Conditional
+  second scoring fact: TICK-TIME VOLATILITY-CLUSTERING PERSISTENCE (per-symbol
+  tick ACF(|r|) at lags 50 and 100), included as a SCORED fact only if the
+  user ratifies it per the Step 1 correction (the lag-10 level overlapped;
+  only persistence separated cleanly); until ratified it is a sanity check.
+  SANITY CHECKS, explicitly NEVER scoring criteria (the memoryless null
+  already reproduces all four, RESULTS null column): fat-tail kurtosis level,
+  aggregational-Gaussianity decay shape, Hill tail index, ACF(r) bounce sign.
+  A gross failure of a sanity check (LM produces no fat tails, or
+  infinite-variance nonsense, or a one-sided/empty book) is a basic-validity
+  failure noted separately; PASSING a sanity check earns the LM nothing.
+
+  (d) MEASURABILITY. The identical rule is applied to ALL THREE columns:
+  flow memory scored only where >= 500 collapsed signs on that TEST day;
+  vol-clustering persistence scored only where vartop10_absr_tick < 0.5 and
+  n_tick >= 1000. Each fact is scored on the symbols where THAT fact is
+  measurable (per Step 2: the two measurable sets are anticorrelated, so the
+  scored set differs by fact and is NOT their intersection). An
+  (LM,symbol,fact) cell unmeasurable on either the LM or the real column is
+  excluded - neither credit nor penalty. The scored symbol set per fact is
+  named in the published table.
+
+  (e) LM BEATS THE NULL (per symbol, per fact). Build the null envelope for
+  each measurable (symbol, fact) = [min, max] of the null's per-seed values
+  on that TEST symbol. The LM BEATS the null on a symbol for flow memory iff
+  its cross-seed median ACF(1) AND slope BOTH land strictly on the real side
+  of the null envelope AND clear an absolute floor that noise cannot:
+  ACF(1) > null_max AND ACF(1) >= 0.10; slope < null_min AND slope <= -0.30.
+  Aggregate: the LM "beats the null on flow memory" iff it beats on BOTH
+  quantities for >= 2/3 of the flow-measurable TEST symbols. A STRONGER,
+  separately-reported bar - "reproduces real" - additionally requires the
+  LM's per-symbol value to fall within the real TEST symbol's value +/-
+  tolerance (0.10 on ACF(1), 0.20 on slope). Beating the null is the pass
+  bar; reproducing real is the stretch bar; both are reported.
+
+  (f) LM FAILS (the falsifiable sentence, verbatim):
+  "The LM FAILS the headline comparison if, on the flow-sign memory fact,
+  its per-symbol ACF(1) and log-log decay slope fall inside the CST null's
+  seed-envelope - not on the real side of it - for at least half of the
+  flow-measurable TEST symbols; that is, if it is not reliably
+  distinguishable from a memoryless generator on a majority of the symbols
+  where the fact can be measured. Reproducing the pooled cross-symbol median
+  while failing this per-symbol bar is also a failure, not a partial pass."
+
+  (g) SEAL PROTOCOL. TEST is read EXACTLY ONCE, via
+  --i-am-running-the-final-comparison, and all three columns are computed in
+  that single pass. The numbers are published whatever they say - a failing
+  LM is a publishable result. No re-runs, no "let me just check one thing,"
+  no re-tuning after seeing TEST. If a genuine bug is discovered after the
+  seal is broken, unsealing again requires a new dated Decision that names
+  this pre-registration, states the bug, and states why a re-run is not
+  target-moving - it is not a silent redo. Until the final pass, 20181228
+  and 20200130 stay sealed for every purpose.
+
 ## Blocked on you
 - (nothing) - resolved 2026-07-30:
   - LOBSTER samples: superseded. Real NASDAQ BX ITCH day landed in data/
