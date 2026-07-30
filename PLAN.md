@@ -220,3 +220,9 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   sampling, kurtosis/Hill/ACFs/flow-sign ACF) -> RESULTS.md per-fact table
   + out/stylized_*.csv raw series. Methodology traps handled explicitly in
   Decisions. Gates green.
+- 2026-07-30 Phase D (prose cleanup) KILLED deliberately: started in an
+  earlier session and orphaned; no partial rewrite survived on disk
+  (working tree clean, nothing in stash/reflog), so nothing to revert.
+  Deferred until the code is structurally stable (post-match(), post-
+  Phase 2 adapter). Do not resurrect it before then. CLAUDE.md created at
+  repo root so the working rules are version-controlled, not session memory.
