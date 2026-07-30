@@ -17,7 +17,7 @@ add_executable(tests
   tests/main.cpp tests/test_adapter.cpp tests/test_book.cpp
   tests/test_bookset.cpp tests/test_codec.cpp tests/test_cst.cpp
   tests/test_dataset.cpp tests/test_fuzz.cpp tests/test_itch_replay.cpp
-  tests/test_match.cpp)
+  tests/test_itch_tokenize.cpp tests/test_match.cpp)
 target_link_libraries(tests PRIVATE exchange_core)
 
 enable_testing()
@@ -50,3 +50,7 @@ add_executable(cst_calibrate tools/cst_calibrate.cpp)
 target_link_libraries(cst_calibrate PRIVATE exchange_core)
 add_executable(cst_sim tools/cst_sim.cpp)
 target_link_libraries(cst_sim PRIVATE exchange_core)
+add_executable(itch_tokenize tools/itch_tokenize.cpp)
+target_link_libraries(itch_tokenize PRIVATE exchange_core)
+add_executable(itch_tokenize_fit tools/itch_tokenize_fit.cpp)
+target_link_libraries(itch_tokenize_fit PRIVATE exchange_core)

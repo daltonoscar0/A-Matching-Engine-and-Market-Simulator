@@ -774,6 +774,64 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
     censoring finding. One book implementation, and it is this one - the
     ITCH ingest drives THIS repo's Book.
 
+- 2026-07-30 (Phase 4, ITCH ingest) Implementation decisions, all logged
+  because they define what the token stream means:
+  (a) The ingest lives in THIS repo (tools/itch_tokenize + _fit over
+  src/oftk.hpp, src/oftk_fit.hpp, src/itch_tokenize.hpp), per the harvest
+  decision: one book implementation, this one. The OFTK v2 binary format
+  and orderflow-factored-v2 manifest are reimplemented byte-for-byte from
+  tape (fixed key order/strings; write->load->write byte-identity pinned in
+  tests) so tape's training half loads them unchanged. Fit/apply split
+  kept: oftk_fit.hpp is included only by the fit tool and tests.
+  (b) 'U' -> Delete+Add (the decided fork): delete half carries the orig
+  order's remaining shares at its price and the real dt; add half carries
+  the new price/size, same side, dt=0 (same timestamp). Verified
+  state-identical to atomic Book::replace (remove+add produces the same
+  ledger and the same seq numbering; layer-1 fingerprints agree on real
+  data).
+  (c) PRICE_OFF = tape's level_index rule against the book state BEFORE
+  the event applies; the U add-half indexes against the post-delete book
+  (its true pre-state). E/C/X/D take side+price from the standing order
+  via find() pre-apply. F -> Add (MPID dropped), C -> ExecVisible (exec
+  price detail dropped by the level-index scheme). P/Q/H remain skips.
+  (d) Tokens cover 09:30-16:00 only (the auction-exclusion time filter,
+  same as stylized); ALL messages are applied whatever their timestamp.
+  dt is measured between consecutive emitted events; first emitted event
+  gets dt=0 (tape's convention for row 0).
+  (e) dataset::enforce() runs before any open in both tools; a TEST day is
+  unreachable from this code path.
+  (f) THE ROUND-TRIP TEST is two-layered because the 52-id vocab is lossy
+  BY DESIGN (8 size buckets cannot encode 350k distinct sizes; refs are
+  dropped), so "detokenize and reconstruct byte-identically" is
+  information-theoretically impossible through the quantized tokens alone.
+  The honest strong version, implemented: LAYER 1 (lossless) - the exact
+  expanded event stream (what the tokens quantize, with exact
+  price/size/ref) drives a fresh Book; its running per-event fingerprint
+  (best bid/ask, ledger, open orders, top-12 levels/side, folded after
+  every raw-message-equivalent) must equal the raw-ITCH-driven Book's,
+  with PRICE_OFF independently recomputed from the fresh book at each
+  event. LAYER 2 (quantized) - tokens must be the exact quantization of
+  that stream and invert per tape's roundtrip contract (re-encode
+  identity, decode agreement on lossless fields, roundtrip_ok). End-state
+  compare alone would be vacuous (books drain to 0 at close), hence the
+  running fingerprint.
+  (g) Mutation-verified on BOTH synthetic and the real TRAIN day: adjacent
+  -event swap -> layer-1 fingerprint mismatch (caught); PRICE_OFF
+  off-by-one on the event side -> lvl_off recompute catches it at the
+  exact event; off-by-one on the token side -> layer-2 token/stream
+  mismatch at the exact event. The test can fail, and names where.
+  RESULTS: full-day SPY on TRAIN 20190130: 74.18M msgs applied (zero
+  rejects), 401,881 SPY msgs -> 425,841 events (23,960 U expanded, 5.96% -
+  matches the measured 4.6-8.7% U range) -> 376,425 in-window -> 1,882,129
+  tokens; round-trip layers 1+2 PASS; 3.88M msgs/sec (BENCH.md row).
+  First real BX numbers, single day, SPY only (Phase 5 does the panel):
+  PRICE_OFF inside(-1) 20.2%, tail(>+10) 2.0%, deeper than +30 0.007%,
+  px UNK 0%; dt_zero 5.8%; SPY BX size edges [100,101,102,103,104,500,
+  501] vs LOBSTER-SPY [100,200,201,387,500,501,1000] - the -1-only and
+  window assumptions look survivable but the 20% inside-spread share is
+  NEW vs LOBSTER (BX's wide spreads leave room inside); formal re-measure
+  in Phase 5.
+
 ## Blocked on you
 - (nothing) - resolved 2026-07-30:
   - LOBSTER samples: superseded. Real NASDAQ BX ITCH day landed in data/
@@ -994,3 +1052,13 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   unique SPEC split-guard commit d8b15cc the remote lacks). TAKE/LEAVE/
   SUPERSEDE harvest decision recorded in Decisions; nothing deleted in
   ~/orderflow-lm. Gates green.
+- 2026-07-30 Phase 4: ITCH ingest landed - src/oftk.hpp (tape's OFTK v2 +
+  manifest contract, byte-for-byte), src/oftk_fit.hpp (fit split kept),
+  src/itch_tokenize.hpp (ingest core: U->Delete+Add, level-index PRICE_OFF
+  off the pre-event reconstructed book, dataset::enforce in both tools),
+  tools/itch_tokenize{,_fit}, tests/test_itch_tokenize.cpp (7 cases incl.
+  synthetic + real-slice round-trips and 3 mutation checks). Full-day
+  round-trip on TRAIN 20190130 SPY: layers 1+2 PASS (401,881 state folds
+  identical; 376,425 events token-verified); mutations swap/pxoff all
+  caught on real data. 3.88M msgs/sec (BENCH.md). Gates green (0 warnings /
+  ctest incl. new tests / 1M fuzz).
