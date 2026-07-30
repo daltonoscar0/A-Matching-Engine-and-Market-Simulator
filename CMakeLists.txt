@@ -15,8 +15,8 @@ target_include_directories(exchange_core PUBLIC src)
 # Tests (Catch2 v2.13.10 vendored as a single header in third_party/)
 add_executable(tests
   tests/main.cpp tests/test_book.cpp tests/test_bookset.cpp
-  tests/test_codec.cpp tests/test_dataset.cpp tests/test_fuzz.cpp
-  tests/test_itch_replay.cpp tests/test_match.cpp)
+  tests/test_codec.cpp tests/test_cst.cpp tests/test_dataset.cpp
+  tests/test_fuzz.cpp tests/test_itch_replay.cpp tests/test_match.cpp)
 target_link_libraries(tests PRIVATE exchange_core)
 
 enable_testing()
@@ -43,3 +43,7 @@ add_executable(stylized tools/stylized.cpp)
 target_link_libraries(stylized PRIVATE exchange_core)
 add_executable(gap_hist tools/gap_hist.cpp)
 target_link_libraries(gap_hist PRIVATE exchange_core)
+add_executable(cst_calibrate tools/cst_calibrate.cpp)
+target_link_libraries(cst_calibrate PRIVATE exchange_core)
+add_executable(cst_sim tools/cst_sim.cpp)
+target_link_libraries(cst_sim PRIVATE exchange_core)

@@ -41,7 +41,14 @@ Milestone: closed-loop simulation runs N steps without invariant violations.
 - [ ] Fat tails (return kurtosis), volatility clustering (ACF of |r|),
       order-flow autocorrelation, square-root impact fit - for the LM sim
       and null columns once Phase 2 exists
-- [ ] Compare vs Cont-Stoikov-Talreja null model
+- [x] Compare vs Cont-Stoikov-Talreja null model - null COLUMN done
+      2026-07-30 (src/cst.hpp, tools/cst_calibrate + cst_sim; calibrated on
+      TRAIN, 7 seeds, same stylized pipeline). Verdict: flow-sign memory
+      (ACF(1) + slope) and volatility clustering discriminate; fat-tail
+      levels, kurtosis-decay shape, Hill, and the bounce sign come free
+      from book mechanics and are demoted to sanity checks (RESULTS.md
+      null-column section). The real-vs-LM-vs-null table still waits on
+      Phase 2.
 Milestone: table of stylized facts, real vs LM-sim vs null - the headline result.
 
 ## Phase 4 (stretch): Execution agent
@@ -269,6 +276,51 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   A) is caught by the reconstruction replay within ~40 messages
   (WouldCross). That is the bug class this test exists for.
 
+- 2026-07-30 (CST null) Implementation choices for the Cont-Stoikov-Talreja
+  null model (src/cst.hpp, tools/cst_calibrate, tools/cst_sim), all serving
+  one goal - a FAIR memoryless null, not a strawman:
+  (a) Rates are EMPIRICAL per bucket, not a fitted power law: limit-order
+  intensity lambda(side, d) and per-order cancel intensity theta(side, d)
+  at distance d ticks from the OPPOSITE best (the CST convention), d =
+  1..100, calibrated by counting events and integrating order-second
+  exposure exactly between symbol messages. The null matches the marginal
+  intensities as closely as the data allows and differs ONLY in having no
+  memory. (b) Adds beyond 100 ticks from the opposite best are excluded
+  from the model (they cannot move the mid); cancels/exposure keep a tail
+  bucket so drifted orders still die. theta buckets with under 1
+  order-second of exposure get rate 0 (no rate estimate from no exposure).
+  (c) X, D, and the cancel half of U each count as one cancel decision;
+  U's re-add counts as an add. The sim emits full deletes only.
+  (d) Market-order decisions are calibrated with the SAME 1ms same-sign
+  collapse stylized uses (symmetry between calibration and measurement);
+  sizes are i.i.d. draws from the empirical per-decision-size histogram,
+  executed through Book::match, so sweeps and partial fills are decided by
+  the real engine and multi-level fills share one timestamp (stylized's
+  collapse merges them back into one decision - no artificial sign memory
+  from sweep-splitting, no artificial suppression either). (e) Panel = the
+  13 symbols in the top-20 on >= 4 of 6 TRAIN days (IWM SPY XLK QQQ IWO
+  UVXY SOXL TLT IJH XLE XLV IWN VXX), rates pooled across all 6 TRAIN days;
+  VAL and TEST untouched by calibration. (f) Sim warm-up 08:00-09:30 from a
+  seeded two-order book at the calibrated median spread - outside
+  stylized's window, so the transient is never sampled; day ends 16:05.
+  (g) Every generated stream self-verifies through the reconstruction path
+  (zero rejects, audits, exact conservation) before being written - the
+  same bar real data is held to. (h) The null-vs-real comparison is
+  computed on the SAME 13-symbol panel (real column restricted to panel
+  symbols from the existing per-day summaries) - medians over different
+  symbol sets would not be comparable. (i) READING_LIST.md is referenced in
+  the task but absent from the repo; implemented from the published model
+  (Cont, Stoikov, Talreja 2010, "A stochastic model for order book
+  dynamics", Operations Research 58(3)) - noted, not blocking.
+  Pre-registered interpretation rule (fixed by the user BEFORE the run,
+  restated here before results existed): if CST's flow-sign log-log decay
+  slope is materially different from -0.6 (steeper than -0.9 or near
+  zero), the slope discriminates and the null's value is the floor a
+  generative model must beat; if CST also lands near -0.6, the Lillo-Farmer
+  slope does NOT discriminate and dies as a scoring criterion - and no
+  variant of the statistic gets hunted for in the same session to rescue
+  it.
+
 ## Blocked on you
 - (nothing) - resolved 2026-07-30:
   - LOBSTER samples: superseded. Real NASDAQ BX ITCH day landed in data/
@@ -409,3 +461,20 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   (robust to the estimator, not the draw); Hill-excl-failures and tick-time
   vol clustering are the stable targets. Gates green (0 warnings / ctest /
   1M fuzz).
+- 2026-07-30 CST null column: implemented src/cst.hpp + tools/cst_calibrate
+  + tools/cst_sim (design choices + pre-registered interpretation rule in
+  Decisions), calibrated on the 6 TRAIN days (13-symbol panel), generated 7
+  seeded days (3.65M msgs each, self-verified: 0 rejects, exact
+  conservation), ran them through the unmodified stylized pipeline, and
+  compared against the real column restricted to the same panel.
+  DECISIVE: the memoryless null's flow-sign slope is ~0 (seed spread
+  [-0.23 .. 0.00], pure estimator noise), disjoint from the real
+  [-0.79 .. -0.43] - the Lillo-Farmer slope survives its kill test and is a
+  legitimate scoring target with the null floor recorded. Vol clustering
+  also discriminates (disjoint ranges). The null REPRODUCES fat-tail
+  levels, the kurtosis-decay shape, Hill (failures included), and the
+  bounce sign - all demoted to sanity checks (RESULTS.md). Aggregation was
+  plain medians over the tools' summary CSVs (scratchpad script, not
+  committed - no repo-worthy logic beyond what RESULTS.md states; the
+  evidence CSVs live in out/cstnull/). tests/test_cst.cpp pins the
+  generator mechanics. Gates green (0 warnings / ctest / 1M fuzz).
