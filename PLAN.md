@@ -369,6 +369,30 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   note was added to orderflow-lm/SPEC.md so the requirement lives in that
   repo's source of truth too.
 
+- 2026-07-30 (format reconciliation) Audited the orderflow-lm/Scalpel
+  factored tokenizer against BX ITCH 5.0; full write-up in
+  docs/FORMAT_RECONCILIATION.md. Headline: the tokenizer SURVIVES with no
+  vocabulary redesign, because its two most format-sensitive choices already
+  insulate it - PRICE_OFF is a signed occupied-LEVEL INDEX (not an absolute
+  price or a fixed grid; the tick-offset scheme that WOULD have broken was
+  already dropped in v2), and order-reference identity is DROPPED (so ITCH's
+  64-bit sparse refs never threaten the vocab; the engine owns refs). Bounded
+  scope: (1) a new ITCH-driving adapter that parses BX, drives the exchange
+  reconstruction, and emits [TYPE][SIDE][PRICE_OFF][SIZE][DT] with PRICE_OFF
+  read from the reconstructed book (LOBSTER used its orderbook file; SPEC
+  already anticipated reconstruction for ITCH) - NOT a tokenizer rewrite;
+  (2) refit the frozen SIZE and DT bins on BX TRAIN and re-measure the
+  PRICE_OFF window / "-1-only" assumption on BX (retraining decisions, not
+  code); (3) one design fork - ITCH 'U' has no LOBSTER equivalent: expand to
+  Delete+Add in the adapter (recommended, no vocab change, matches both
+  LOBSTER and our reconstruction) OR add a TYPE_REPLACE token (vocab change +
+  retrain). Other type maps are adapter bridges (F->Add drop MPID, C->Exec
+  price already dropped by the level-index scheme, P/Q/H as skips/specials).
+  What does NOT transfer: the LOBSTER-SPY trained weights and frozen bins - BX
+  is a different distribution, so Phase 3's LM column is a from-scratch BX
+  run. NOT starting the tokenizer change this session; the audit is the
+  deliverable, direction is the user's to pick.
+
 ## Blocked on you
 - (nothing) - resolved 2026-07-30:
   - LOBSTER samples: superseded. Real NASDAQ BX ITCH day landed in data/
