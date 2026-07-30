@@ -2,3 +2,4 @@ build/
 *.itch
 data/
 .claude/
+out/

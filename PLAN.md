@@ -23,8 +23,19 @@ a correct book applying genuine ITCH produces zero rejects (see Decisions).
 Milestone: closed-loop simulation runs N steps without invariant violations.
 
 ## Phase 3: Stylized-fact validation (weeks 7-9)
+- [x] "Real" column: tools/stylized computes fat tails, aggregational
+      Gaussianity, return ACF, volatility clustering, order-flow sign ACF
+      from the replayed BX day (RESULTS.md "Stylized facts - real column",
+      2026-07-30). Built before any model exists, so the baseline is not
+      under pressure to agree with anything.
+      Still needed before it can carry the headline comparison: more days
+      (one day = one draw), and a deeper venue or consolidated feed - BX
+      executes too little for the Lillo-Farmer lag-1000 flow memory
+      (max 2945 market orders per symbol-day) and its thin top-of-book
+      pollutes tail estimates on some symbols.
 - [ ] Fat tails (return kurtosis), volatility clustering (ACF of |r|),
-      order-flow autocorrelation, square-root impact fit
+      order-flow autocorrelation, square-root impact fit - for the LM sim
+      and null columns once Phase 2 exists
 - [ ] Compare vs Cont-Stoikov-Talreja null model
 Milestone: table of stylized facts, real vs LM-sim vs null - the headline result.
 
@@ -40,9 +51,9 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
      reconstruction decision) since generated crossing flow must execute.
   2. Sampling controls (temperature, top-k) + rejection of malformed
      messages at the adapter boundary.
-  3. Stylized-fact harness prep: compute return series from replayed real
-     BX day (we now have real data in-repo) so Phase 3 has its "real"
-     column before the LM sim exists.
+  3. Stylized-fact harness prep: DONE 2026-07-30 (tools/stylized; Phase 3
+     "real" column in RESULTS.md). Follow-up when convenient: more ITCH
+     days for the baseline.
 
 ## Decisions
 - 2026-07-27 Catch2 v2.13.10 vendored (third_party/catch.hpp), the one
@@ -123,6 +134,47 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   stronger evidence: 23.8M real messages decoded with zero rejects and
   exact end-of-day conservation empirically confirms the A/F/E/C/X/D/U
   layouts, 2-byte BE framing, and 48-bit timestamps against the real wire.
+- 2026-07-30 (Step 1) External validation is distributional, not a state
+  diff: conservation cannot catch a wrong decode offset because the same
+  wrong field is added and later removed, balancing perfectly. The checks
+  that CAN catch it: shares on A/F must show round-lot structure (they do:
+  48.5% exactly 100, 91.5% multiples of 100), prices/1e4 must be plausible
+  dollars (99.4% whole-penny, median $48.31), and top-symbol books must be
+  two-sided at cent spreads all session (they are).
+- 2026-07-30 (Step 2) Auction exclusion = the time filter 09:30-16:00
+  alone: this BX day carries zero 'Q' (cross trade) frames in the skip
+  histogram, i.e. the venue ran no opening/closing auctions, so there are
+  no auction prints to strip beyond the window. All messages are still
+  APPLIED whatever their timestamp (books must be correct all day); only
+  the sampled series are windowed.
+- 2026-07-30 (Step 2) Event time = one mid observation per applied book
+  message on that symbol while two-sided; zero returns are KEPT in every
+  primary series (they are what sampling a thin book produces) with the
+  zero fraction reported alongside, plus a mid-change-only ("tick")
+  kurtosis so the zero distortion is visible instead of silently picked.
+  Hill tail index uses nonzero |r| only (zeros are undefined there),
+  cutoff = top 5% of order statistics, k >= 10.
+- 2026-07-30 (Step 2) ACF(r) lag-1 is negative at event scale (median
+  -0.25): bid-ask bounce / quote flicker, microstructure noise, reported
+  as-is and not smoothed away. ACFs are computed at event scale AND on the
+  1s calendar grid; the 60s grid (390 points/day) is too short for
+  lag-100 ACFs and is used for kurtosis only.
+- 2026-07-30 (Step 2) Aggressive-flow signs come from E/C fills: the
+  resting order's side names the aggressor (resting ask hit -> +1 buy).
+  Consecutive fills with identical timestamp and sign collapse into one
+  market order (one order walking the book is one decision, not many).
+  BX executes so little that lag 1000 exceeds n/4 for every symbol
+  (max 2945 signs/day), so the sign ACF runs to min(1000, n/4) and the
+  long-memory claim rests on the log-log slope over lags 1-100.
+- 2026-07-30 (Step 2) Open/close transients are kept in the primary
+  numbers (they are continuous-market samples); a trimmed 09:35-15:55
+  sensitivity is quoted in RESULTS.md to attribute the kurtosis blowups
+  (QQQ 19340 -> 10.6, IWB 20429 -> 16.0) to the 09:30 book-population
+  and 16:00 liquidity-drain windows rather than to genuine tails.
+- 2026-07-30 (Step 2) Limitation written down: BX is a minority venue;
+  its mid can be stale or wide relative to the NBBO, and one day is one
+  draw. The stylized-facts table is the facts on THIS venue THIS day - a
+  first baseline, not validated empirical ground truth.
 
 ## Blocked on you
 - (nothing) - resolved 2026-07-30:
@@ -158,3 +210,13 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   p50 125ns, p99 875ns). ctest gate: tests/test_itch_replay.cpp replays a
   200k-msg slice with per-message invariant checks, skips gracefully when
   data/ absent. Gates green (0 warnings / ctest / 1M fuzz).
+- 2026-07-30 Step 1 (external validation): tools/field_sanity (A/F shares
+  round-lot structure + price plausibility) and tools/bbo_trace (top-5
+  BBO/spread/depth every 60s -> out/*.csv). Both pass: the reconstruction
+  now has external validation, not just internal consistency. RESULTS.md
+  row appended. Gates green.
+- 2026-07-30 Step 2 (stylized facts): tools/stylized computes the Phase 3
+  "real" column from the replayed day (top 20 symbols, event + 1s/10s/60s
+  sampling, kurtosis/Hill/ACFs/flow-sign ACF) -> RESULTS.md per-fact table
+  + out/stylized_*.csv raw series. Methodology traps handled explicitly in
+  Decisions. Gates green.
