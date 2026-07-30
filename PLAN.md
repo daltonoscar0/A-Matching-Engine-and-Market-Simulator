@@ -235,6 +235,27 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   Phase 2 adapter decomposes a replace that would cross into cancel + new
   aggressive order. The reconstruction path's WouldCross reject on U stays
   authoritative for resting-side modifies.
+- 2026-07-30 (Step 1 follow-up) The 2c collapse window is a free parameter
+  and the sweep proves it: flow-sign ACF(1) has NO machine-scale plateau
+  (flat only 0-10us, then sliding ~ -0.05 per decade of window all the way
+  to 100ms; out/collapse_sensitivity.csv + RESULTS.md row). Pre-registered
+  interpretation applied: the lag-1 level is reported window-conditional
+  (0.27 at 1ms; defensible windows span 0.32-0.17), the default stays at
+  the gap-histogram-justified 1ms and was NOT tuned toward the literature,
+  and model scoring must target the robust quantities - the sign and the
+  log-log decay slope ~ -0.6, stable for every window <= 1ms - not the
+  lag-1 level. The earlier 2c wording "robust 100us-10ms (0.32-0.22)" was
+  too generous: a factor-of-2 slide is sensitivity, not robustness. Cause
+  is in the gap histogram: the machine mode spans 1us-1ms and the 10-32ms
+  valley is a ~35% dip, not empty - the timescales overlap, so no window
+  separates them cleanly.
+- 2026-07-30 (Step 2 follow-up) Evidence tools live in-repo: gap_hist.cpp
+  (the measurement behind the 2c window decision) moved from a
+  garbage-collected scratchpad into tools/ + CMakeLists, same reasoning
+  that kept bench/tail.cpp. Verified the repo build reproduces the bimodal
+  histogram. Scratchpad sweep found nothing else decision-bearing (only
+  one-shot download scripts whose procedure the session log already
+  records).
 - 2026-07-30 (Step 3) The strong test (emit -> encode -> decode ->
   reconstruct -> byte-identical fingerprint) was mutation-verified: an
   emit bug invisible to every per-match assertion (A carrying the original
@@ -316,3 +337,22 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   zero rejects, exact conservation, drains to 0 (RESULTS.md row). The
   plain sequential curl stalled at ~10KB/s; -C - resume + --speed-time
   stall-abort + 3-way parallel fetched all 8 (~6.2GB) in minutes.
+- 2026-07-30 Step 0 (state check after interruption): everything the
+  previous session logged actually completed - all 9 data files pass
+  gzip -t, build is zero-warning, ctest + 1M fuzz green, stylized has
+  2a/2b/2c, test_match.cpp exists and passes. Nothing to finish.
+- 2026-07-30 Step 2 follow-up: tools/gap_hist.cpp rescued from scratchpad
+  into the repo (see Decisions), builds clean, reproduces the bimodal
+  same-sign inter-fill gap histogram (448k pairs, machine mode ~32us,
+  valley 10-32ms, decision mass >= 100ms). Gates green.
+- 2026-07-30 Step 1 follow-up: collapse_ns sensitivity sweep, 7 windows
+  0 -> 100ms on 20190730 -> out/collapse_sensitivity.csv + RESULTS.md row.
+  No plateau: ACF(1) median 0.414 -> 0.168 slides smoothly; verdict (per
+  the pre-registered rule) = the lag-1 level is a parameter choice; slope
+  ~ -0.6 is the robust quantity (see Decisions). Gates green.
+- 2026-07-30 match() mutation re-check: introduced an off-by-one in FIFO
+  fill ordering (match takes head->next instead of head). The FIFO
+  property test fails (4 assertions) AND the strong emit->reconstruct
+  fuzz test aborts - the strong test catches fill-ordering bugs
+  independently of the property tests. Mutation reverted, book.cpp
+  byte-identical to HEAD, gates re-run green.
