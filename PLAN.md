@@ -194,6 +194,21 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   its mid can be stale or wide relative to the NBBO, and one day is one
   draw. The stylized-facts table is the facts on THIS venue THIS day - a
   first baseline, not validated empirical ground truth.
+- 2026-07-30 (Step 1) Decision: orderflow-lm TRAINS ON BX FLOW. The
+  stylized-facts baseline is therefore correctly aimed - it measures the
+  same distribution the model will be scored on. Consequence, written down
+  so nobody overstates it later: the claim this project can support is
+  "reproduces NASDAQ BX order flow", NOT "reproduces market
+  microstructure". BX's top of book sits several ticks behind the NBBO
+  (SPY median spread 4c on this venue while the consolidated NBBO was a
+  penny), so BX flow is a real but idiosyncratic slice of the market.
+  Narrower, honest claim.
+- 2026-07-30 (Step 1) Training set: 8 more BX days fetched (20181228,
+  20190130, 20190327, 20190530, 20190830, 20191030, 20191230, 20200130 -
+  every remaining downloadable day on emi.nasdaq.com; the 2018-01..10
+  listings are md5-stub-only). Spread over 14 months = closer to
+  independent draws than one week. Verified by gzip -t, not md5 (the
+  .md5sum sidecars 404). data/ stays gitignored.
 - 2026-07-30 (Step 3) match() structure: a new entry point ON Book
   (Book::match), not a wrapper class - matching needs FIFO-head and
   best-level access the public API doesn't expose, and building it from the
@@ -294,3 +309,10 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   mutation-verified (see Decisions). bench_match: 4.72M matches/sec,
   crossing p50 167ns / p99 792ns / p99.9 2000ns (BENCH.md row; not
   comparable to replay rows). Gates green incl. the new fuzz at 1M.
+- 2026-07-30 Step 1: 8 more BX days fetched (every remaining downloadable
+  day on emi.nasdaq.com), all gzip-verified; orderflow-lm-trains-on-BX
+  decision + claim scope logged in Decisions. Generalization check: full
+  replay of 20181228 (different year, 4.6x volume: 109.7M book msgs) =
+  zero rejects, exact conservation, drains to 0 (RESULTS.md row). The
+  plain sequential curl stalled at ~10KB/s; -C - resume + --speed-time
+  stall-abort + 3-way parallel fetched all 8 (~6.2GB) in minutes.
