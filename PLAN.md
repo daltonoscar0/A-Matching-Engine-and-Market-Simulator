@@ -171,6 +171,25 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   sensitivity is quoted in RESULTS.md to attribute the kurtosis blowups
   (QQQ 19340 -> 10.6, IWB 20429 -> 16.0) to the 09:30 book-population
   and 16:00 liquidity-drain windows rather than to genuine tails.
+- 2026-07-30 (Step 2 corrections) 2a: ACF(|r|) on a 70%-zero 1s series
+  cannot distinguish volatility clustering from bursty-activity clustering
+  (quiet stretches cluster in time), so the tick series (mid-changes only,
+  zeros impossible by construction) carries the discriminating version;
+  both are reported. Tick lag-1 is discounted as flicker-inflated (a level
+  blinking off/on gives consecutive equal |r|); lags 10-100 are the
+  informative range.
+- 2026-07-30 (Step 2 corrections) 2b: Hill alpha < 1 implies infinite mean
+  and is therefore an estimator failure (here: stale-touch jumps dominating
+  the top-5% order statistics), never a measurement. Failures are excluded
+  from cross-symbol medians and reported with their reason.
+- 2026-07-30 (Step 2 corrections) 2c: sign collapse is windowed, not
+  exact-timestamp: one sweep's fills carry distinct ns timestamps. Window
+  chosen from the measured same-sign inter-fill gap distribution on this
+  day (bimodal: machine mode ~32us-1ms, decision mass >= 100ms, valley
+  10-32ms) = 1ms default, on the conservative (under-collapsing) side of
+  the valley so residual autocorrelation is real, not an artifact of
+  merging separate decisions. --collapse-ns flag for sensitivity; result
+  is robust 100us-10ms (lag-1 0.32-0.22).
 - 2026-07-30 (Step 2) Limitation written down: BX is a minority venue;
   its mid can be stale or wide relative to the NBBO, and one day is one
   draw. The stylized-facts table is the facts on THIS venue THIS day - a
@@ -226,3 +245,9 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   Deferred until the code is structurally stable (post-match(), post-
   Phase 2 adapter). Do not resurrect it before then. CLAUDE.md created at
   repo root so the working rules are version-controlled, not session memory.
+- 2026-07-30 Step 2 corrections: tick-time |r| ACF (2a: volatility
+  clustering partially survives - real on ~half the panel, absent on 6/20;
+  part of the 1s-grid decay was activity clustering), Hill alpha<1
+  reclassified as estimator failures (2b: median 2.59 -> 2.95), windowed
+  sign collapse (2c: lag-1 0.42 -> 0.27, inside Lillo-Farmer 0.2-0.3).
+  RESULTS.md addendum row + section; original table untouched. Gates green.

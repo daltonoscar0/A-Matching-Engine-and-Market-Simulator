@@ -17,10 +17,20 @@
 //   - ACF of r (lags 1-50) and of |r| (lags 1-100), at event scale and 1s
 //     scale. Bid-ask bounce / quote flicker makes ACF(r) lag-1 negative at
 //     event scale; that is microstructure, reported not smoothed away.
+//   - ACF of |r| ALSO on the tick series (mid-change-only): with ~70% zero
+//     returns at 1s, slow ACF(|r|) decay on the calendar grid can be bursty
+//     ACTIVITY clustering (quiet stretches cluster in time), which is
+//     indistinguishable from volatility clustering in that statistic. The
+//     tick series has no zeros by construction, so surviving slow decay
+//     there is volatility clustering proper.
 //   - aggressive order-flow signs from E/C fills: the resting order's side
 //     names the aggressor (resting ask hit -> buy = +1). Consecutive fills
-//     with the same timestamp and sign collapse into one market order (one
-//     aggressive order walking the book is one decision, not many). ACF over
+//     with the same sign separated by <= collapse_ns (default 1ms, flag
+//     --collapse-ns) collapse into one market order: one aggressive order
+//     sweeping several price levels produces fills with DISTINCT nanosecond
+//     timestamps (measured on this day: machine-scale gap mode at ~32us
+//     running to ~1ms, decision-scale mass from ~100ms up, valley at
+//     10-32ms), so an exact-timestamp rule splits single sweeps. ACF over
 //     lags 1-1000 plus a log-log slope fit (Lillo-Farmer long memory).
 //
 // Outputs (out_dir): per symbol stylized_<SYM>_event.csv (ts_ns,mid),
@@ -28,7 +38,7 @@
 // stylized_<SYM>_acf.csv, stylized_<SYM>_flowacf.csv, and a cross-symbol
 // stylized_summary.csv.
 //
-// Usage: stylized <itch_file> <out_dir> [--top N]
+// Usage: stylized <itch_file> <out_dir> [--top N] [--collapse-ns NS]
 #include <algorithm>
 #include <cinttypes>
 #include <cmath>
@@ -179,14 +189,18 @@ int main(int argc, char** argv) {
     }
     const char* out_dir = argv[2];
     size_t top_n = 20;
+    uint64_t collapse_ns = 1000000;   // 1ms; see header comment
     for (int i = 3; i < argc; ++i) {
         if (!std::strcmp(argv[i], "--top") && i + 1 < argc)
             top_n = strtoull(argv[++i], nullptr, 10);
+        else if (!std::strcmp(argv[i], "--collapse-ns") && i + 1 < argc)
+            collapse_ns = strtoull(argv[++i], nullptr, 10);
         else { std::fprintf(stderr, "bad arg: %s\n", argv[i]); return 2; }
     }
 
     std::vector<uint8_t> wire = slurp(argv[1]);
-    std::printf("file: %s (%.1f MB)\n", argv[1], wire.size() / 1e6);
+    std::printf("file: %s (%.1f MB), sign collapse window %" PRIu64 " ns\n",
+                argv[1], wire.size() / 1e6, collapse_ns);
 
     bool dir_err = false;
     auto dir = lob::scan_stock_directory(wire.data(), wire.size(), dir_err);
@@ -252,7 +266,8 @@ int main(int argc, char** argv) {
         if (in_window && (type == 'E' || type == 'C')) {
             if (const lob::Order* o = b.find(lob::ref_of(*m))) {
                 int8_t s = o->side == lob::Side::Sell ? int8_t(1) : int8_t(-1);
-                if (t.sign.empty() || ts != t.last_sign_ts || s != t.last_sign)
+                if (t.sign.empty() || s != t.last_sign ||
+                    ts - t.last_sign_ts > collapse_ns)
                     t.sign.push_back(s);
                 t.last_sign_ts = ts;
                 t.last_sign    = s;
@@ -283,12 +298,13 @@ int main(int argc, char** argv) {
         "n_1s,zero_frac_1s,kurt_1s,kurt_1s_nonzero,kurt_10s,kurt_60s,"
         "hill_event,hill_1s,"
         "acf1_r_event,acf1_r_1s,acf1_absr_1s,acf10_absr_1s,acf50_absr_1s,"
-        "acf100_absr_1s,n_signs,acf1_sign,acf10_sign,acf100_sign,"
-        "acf1000_sign,sign_loglog_slope\n");
+        "acf100_absr_1s,n_tick,acf1_absr_tick,acf10_absr_tick,"
+        "acf50_absr_tick,acf100_absr_tick,n_signs,acf1_sign,acf10_sign,"
+        "acf100_sign,acf1000_sign,sign_loglog_slope\n");
 
-    std::printf("\n%-8s %9s %7s %8s %8s %8s %8s %7s %7s %8s %8s %8s\n",
+    std::printf("\n%-8s %9s %7s %8s %8s %8s %8s %7s %7s %8s %8s %8s %8s\n",
                 "symbol", "n_event", "zeroE", "kurtE", "kurt1s", "kurt10s",
-                "kurt60s", "hill1s", "acf1E", "acf1|r|", "signN",
+                "kurt60s", "hill1s", "acf1E", "acf1|r|", "a1|r|tk", "signN",
                 "signSlope");
     for (auto& t : tr) {
         // event series + returns
@@ -316,6 +332,13 @@ int main(int argc, char** argv) {
         std::vector<double> absr1(r1.size());
         for (size_t i = 0; i < r1.size(); ++i) absr1[i] = std::fabs(r1[i]);
         auto acf_absr_1s = acf(absr1, 100);
+        // 2a: |r| ACF on the tick series (every observation a genuine mid
+        // change, zeros absent by construction) - separates volatility
+        // clustering from bursty-activity clustering.
+        std::vector<double> absr_tick(r_tick.size());
+        for (size_t i = 0; i < r_tick.size(); ++i)
+            absr_tick[i] = std::fabs(r_tick[i]);
+        auto acf_absr_tick = acf(absr_tick, 100);
 
         std::vector<double> signd(t.sign.begin(), t.sign.end());
         size_t sign_maxlag = std::min<size_t>(1000, signd.size() / 4);
@@ -347,13 +370,15 @@ int main(int argc, char** argv) {
                          m1[i]);
         std::fclose(f);
         f = open_csv("acf");
-        std::fprintf(f, "lag,acf_r_event,acf_absr_event,acf_r_1s,acf_absr_1s\n");
+        std::fprintf(f, "lag,acf_r_event,acf_absr_event,acf_r_1s,acf_absr_1s,"
+                        "acf_absr_tick\n");
         for (size_t k = 1; k <= 100; ++k)
-            std::fprintf(f, "%zu,%.6f,%.6f,%.6f,%.6f\n", k,
+            std::fprintf(f, "%zu,%.6f,%.6f,%.6f,%.6f,%.6f\n", k,
                          k < acf_r_ev.size() ? acf_r_ev[k] : NAN,
                          k < acf_absr_ev.size() ? acf_absr_ev[k] : NAN,
                          k < acf_r_1s.size() ? acf_r_1s[k] : NAN,
-                         k < acf_absr_1s.size() ? acf_absr_1s[k] : NAN);
+                         k < acf_absr_1s.size() ? acf_absr_1s[k] : NAN,
+                         k < acf_absr_tick.size() ? acf_absr_tick[k] : NAN);
         std::fclose(f);
         f = open_csv("flowacf");
         std::fprintf(f, "lag,acf_sign\n");
@@ -367,7 +392,7 @@ int main(int argc, char** argv) {
         std::fprintf(sum,
             "%s,%zu,%.4f,%.2f,%.2f,%zu,%.4f,%.2f,%.2f,%.2f,%.2f,"
             "%.2f,%.2f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%zu,%.4f,%.4f,%.4f,"
-            "%.4f,%.3f\n",
+            "%.4f,%zu,%.4f,%.4f,%.4f,%.4f,%.3f\n",
             t.name.c_str(), r_ev.size(), zero_fraction(r_ev),
             excess_kurtosis(r_ev), excess_kurtosis(r_tick), r1.size(),
             zero_fraction(r1), excess_kurtosis(r1), excess_kurtosis(r1_nz),
@@ -375,16 +400,19 @@ int main(int argc, char** argv) {
             hill_alpha(r_ev, 0.05), hill_alpha(r1, 0.05),
             at(acf_r_ev, 1), at(acf_r_1s, 1), at(acf_absr_1s, 1),
             at(acf_absr_1s, 10), at(acf_absr_1s, 50), at(acf_absr_1s, 100),
+            r_tick.size(), at(acf_absr_tick, 1), at(acf_absr_tick, 10),
+            at(acf_absr_tick, 50), at(acf_absr_tick, 100),
             signd.size(), at(acf_sign, 1), at(acf_sign, 10),
             at(acf_sign, 100), at(acf_sign, 1000), slope);
 
         std::printf("%-8s %9zu %6.1f%% %8.1f %8.1f %8.1f %8.1f %7.2f %7.3f "
-                    "%8.3f %8zu %8.3f\n",
+                    "%8.3f %8.3f %8zu %8.3f\n",
                     t.name.c_str(), r_ev.size(),
                     100 * zero_fraction(r_ev), excess_kurtosis(r_ev),
                     excess_kurtosis(r1), excess_kurtosis(r10),
                     excess_kurtosis(r60), hill_alpha(r1, 0.05),
-                    at(acf_r_ev, 1), at(acf_absr_1s, 1), signd.size(), slope);
+                    at(acf_r_ev, 1), at(acf_absr_1s, 1),
+                    at(acf_absr_tick, 1), signd.size(), slope);
     }
     std::fclose(sum);
     std::printf("\nwrote per-symbol CSVs + stylized_summary.csv to %s\n",
