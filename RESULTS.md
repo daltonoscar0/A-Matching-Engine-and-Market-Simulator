@@ -490,3 +490,129 @@ immediately and is never rebuilt - the model under-emits resting asks
 relative to deletes/executions at this training scale); longest-lived
 stream applied 7.6% of tuples, 91.5% UnknownReference. No stylized facts
 computed, no null comparison. Series: out/tokens/samples/health_*.csv.
+
+## Step 1 (2026-07-31): THE COLD-START CONTROL - prior viability results measured the HARNESS
+
+Question, asked before any further training: are the viability failures a
+property of the model or of the initialization? Control: run the REAL
+token stream - by construction what a perfect model emits - through
+sim_health under the IDENTICAL two-order seeding every previous viability
+result used.
+
+VERDICT: THE REAL STREAM IS NOT VIABLE COLD-STARTED. Every viability
+result recorded before this row measured the harness, not the model.
+
+| stream (real BX tokens) | tuples | applied | signs | book dead at | verdict |
+|---|---|---|---|---|---|
+| SPY 20190130 (TRAIN) | 376,425 | 6,872 (1.83%) | 0 | tuple 3 | NOT VIABLE |
+| SPY 20191230 (TRAIN) | 595,169 | 7,742 (1.30%) | 0 | tuple 39 | NOT VIABLE |
+
+Rejection breakdown, SPY 20190130 (sim_health --why, added with this row;
+shim::Why names the RULE that refused, not just the Reject category):
+
+| rule | count | % of tuples |
+|---|---|---|
+| level_absent (PRICE_OFF 0..+10 names a level that does not exist) | 285,901 | 75.95% |
+| inside_no_best (-1 add with no same-side best) | 76,072 | 20.21% |
+| tail_non_add (PX_TAIL on a cancel/delete) | 4,387 | 1.17% |
+| tail_no_depth (PX_TAIL add with < 11 occupied levels) | 3,193 | 0.85% |
+| unparseable / invariant / absurd | 0 | 0.00% |
+
+level_absent by requested index: adds asked for index 0 29,558 times and
+ALL 29,558 failed; likewise every index 1..10 at a 100% failure rate.
+Applied by kind: add 0, cancel 2, exec 6,870 (the execs "apply" against an
+empty book and fill nothing, which is why signs = 0).
+
+MECHANISM. shim::resolve maps PRICE_OFF 0..+10 to "the price of that
+occupied same-side level, must exist else UnknownReference". Seeding with
+two resting orders leaves ONE occupied level per side, so only indices 0
+and -1 can resolve. Phase 5 measured 20.9% of panel events pricing inside
+the spread, so roughly 80% of a correctly-learned add distribution targets
+levels that are not there at generation start. Adds fail, deletes succeed,
+the book drains - and an EMPTY book is an ABSORBING state for this shim:
+every resolution rule needs an existing reference, so nothing can ever
+resolve again. Death at tuple 3 is not a slow drift; it is the seed being
+consumed. CST never had this problem: it places at absolute tick distances
+from the touch, so it can build depth from nothing, and it got an
+08:00-09:30 warm-up. The LM emits level indices, which are parasitic on
+existing depth, and got no warm-up.
+
+## Step 2 (2026-07-31): WARM START - fixes the cold start, does NOT make the real stream viable
+
+Harness change (NOT a model or scoring change): tools/warm_book replays a
+TRAIN day's pre-open flow through the SAME ingest (ingest::ingest_day +
+strict ingest::replay_events) up to 09:30 and writes the resting book as a
+snapshot; sim_health and shim_drive gained --warm-start to load it instead
+of seeding two orders. This makes the LM's starting conditions COMPARABLE
+to CST's 08:00-09:30 warm-up rather than advantaging it: the LM starts
+from a real book, exactly as the null effectively did.
+
+The real 09:30 BX book is thin: SPY 20191230 = 24 resting orders over 10
+bid / 11 ask levels, best 322.93 / 323.00 (7-tick spread). It barely spans
+the tokenizer's PRICE_OFF window at all.
+
+Control re-run, SPY 20191230 real tokens, same stream both ways:
+
+| seeding | applied | signs | first side empty | book dead at | verdict |
+|---|---|---|---|---|---|
+| cold (2 orders) | 7,742 (1.30%) | 0 | - | tuple 39 | NOT VIABLE |
+| warm (real 09:30 book) | 12,384 (2.08%) | 37 | ask at 4,518 | tuple 8,265 | NOT VIABLE |
+
+Warm-starting works as designed - the healthy phase is real (first 500
+tuples: 82.2% applied, two-sided at 100% of checkpoints, open_orders drift
++31 per 1k tuples, V2 and V3 both PASS) - but the stream still collapses.
+Per the pre-registered branch of the Step 2 instruction, that means
+something deeper is wrong in the shim. It is named below.
+
+THE DEFECT: THE PRICE_OFF INVERSE IS NOT A STRUCTURAL INVERSE.
+ingest::detail::level_index records the COUNT of strictly-better occupied
+levels, so "join occupied level k" and "open a NEW level just better than
+occupied level k" encode to the SAME token; shim::resolve's inverse always
+picks "join level k". Measured on real in-window adds (itch_tokenize now
+reports this classification), TRAIN 20191230:
+
+| symbol | adds | at-level (inverse exact) | NEW interior (inverse WRONG) | inside spread (collapsed to 1 tick) | NEW below bottom |
+|---|---|---|---|---|---|
+| SPY | 297,118 | 56.46% | 9.40% | 34.14% | 0.00% |
+| IWM | 196,127 | 53.44% | 5.25% | 41.30% | 0.00% |
+| QQQ | 216,535 | 49.44% | 6.49% | 44.06% | 0.00% |
+| XLK | 89,062 | 57.67% | 3.58% | 38.74% | 0.00% |
+| UVXY | 80,580 | 7.27% | 10.50% | 82.23% | 0.00% |
+
+CONSEQUENCE - A DEPTH RATCHET. Level DESTRUCTION is unrestricted (any
+delete or execution can empty any level). Level CREATION has exactly two
+channels: a -1 add (one tick inside the same-side best) and a PX_TAIL add,
+and PX_TAIL REQUIRES >= 11 occupied levels already. So once a side falls
+below 11 levels the only way to make a new level is at the touch, while
+losses happen everywhere. Observed on the real warm-started stream: the
+ask side goes 11 levels -> 4 within 400 tuples while the order COUNT stays
+healthy (23 -> 39); indices 8/9/10 and PX_TAIL then reject en masse
+(12.4% of tuples in the first 500, all of them adds), which is exactly
+what would have rebuilt the depth; ask side empty at tuple 4,518.
+
+Boring explanations checked and ELIMINATED by measurement, not assumed:
+- partial-cancel-as-full-delete: PartialCancel is 0.02% of SPY events (93
+  of 595,169). Not the drain.
+- add/delete imbalance in the stream itself: adds 297,118 vs deletes
+  290,230, net +6,795. The stream should GROW the book.
+- adds landing below the book's bottom: 0.00% on every symbol measured.
+- economic-absurdity or invariant rejects: 0 in every run.
+
+WHY THIS IS A CEILING NO TRAINING CAN REACH PAST. out/tokens/sample.py
+generates autoregressively from the model's own token history alone - the
+sampler passes NO book state to the model. So a trained model, like the
+real stream, will request PRICE_OFF indices without knowing whether the
+simulated book has that many levels. The real token stream is therefore a
+fair UPPER BOUND on what any model trained on this tokenization can
+achieve through this shim, and it does not clear the bar.
+
+This does NOT touch the pre-registration: no scored fact, threshold, or
+failure condition is changed by this row. It is a statement about the
+generation harness, recorded before any model was scored.
+
+Honest scope note: replaying a fixed real token stream open-loop is not
+literally "a perfect model in closed loop" - once the simulated book
+diverges from the real one, recorded level indices refer to a book that no
+longer exists. Two things keep the control load-bearing anyway: divergence
+cannot explain a death at tuple 3 (Step 1), and the divergence is itself
+STARTED by the defect above (the first misplaced interior add).

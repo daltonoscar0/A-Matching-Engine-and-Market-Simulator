@@ -45,9 +45,48 @@
 
 namespace shim {
 
+// WHY a resolution failed, at the granularity of the RULE that refused -
+// diagnostic only, never consulted by the loop. The four adapter Reject
+// categories say a tuple failed; these say which resolution rule said no,
+// which is what distinguishes a model defect from a harness defect (a book
+// with one occupied level per side rejects every add at index 1..10 no
+// matter how good the model is - see the 2026-07-31 cold-start control).
+enum class Why : uint8_t {
+    None = 0,
+    DecodeFailed,      // slot outside its id range
+    HiddenOrCross,     // legal id the visible-book loop cannot express
+    UnkNonAdd,         // UNK price slot on a cancel/delete: names no order
+    UnkEmptyOpposite,  // UNK add, but the opposite side is empty too
+    InsideNonAdd,      // -1 on a cancel/delete: nothing rests inside
+    InsideNoBest,      // -1 add with no same-side best to be inside of
+    TailNonAdd,        // PX_TAIL on a cancel/delete: names no level
+    TailNoDepth,       // PX_TAIL add with < 11 occupied levels on that side
+    LevelAbsent,       // 0..+10 index: that occupied level does not exist
+    Resync,            // driver-level: misaligned or truncated pseudo-tuple
+    kCount
+};
+
+inline const char* why_name(Why w) {
+    switch (w) {
+        case Why::None: return "none";
+        case Why::DecodeFailed: return "decode_failed";
+        case Why::HiddenOrCross: return "hidden_or_cross";
+        case Why::UnkNonAdd: return "unk_non_add";
+        case Why::UnkEmptyOpposite: return "unk_empty_opposite";
+        case Why::InsideNonAdd: return "inside_non_add";
+        case Why::InsideNoBest: return "inside_no_best";
+        case Why::TailNonAdd: return "tail_non_add";
+        case Why::TailNoDepth: return "tail_no_depth";
+        case Why::LevelAbsent: return "level_absent";
+        case Why::Resync: return "resync_or_truncated";
+        default: return "?";
+    }
+}
+
 struct Resolution {
     bool ok = false;
     lob::Reject reject = lob::Reject::None;  // set when !ok
+    Why why = Why::None;                     // diagnostic detail for !ok
     lob::EmittedAction action;               // valid when ok
     oftk::ApproxEvent event;                 // decoded (valid if not
                                              // Unparseable-at-decode)
@@ -83,12 +122,14 @@ inline Resolution resolve(const uint16_t t[5], const oftk::TickerBins& bins,
     Resolution r;
     if (!oftk::decode_event(t, bins, r.event)) {
         r.reject = lob::Reject::Unparseable;
+        r.why = Why::DecodeFailed;
         return r;
     }
     const oftk::ApproxEvent& e = r.event;
     if (e.type == oftk::MsgType::ExecHidden ||
         e.type == oftk::MsgType::CrossTrade) {
         r.reject = lob::Reject::Unparseable;  // outside the visible-book loop
+        r.why = Why::HiddenOrCross;
         return r;
     }
     const lob::Side side =
@@ -110,12 +151,14 @@ inline Resolution resolve(const uint16_t t[5], const oftk::TickerBins& bins,
     if (!e.has_ref) {  // UNK: same side empty
         if (e.type != oftk::MsgType::Add) {
             r.reject = lob::Reject::UnknownReference;  // nothing to cancel
+            r.why = Why::UnkNonAdd;
             return r;
         }
         const uint32_t opp = side == lob::Side::Buy ? b.best_ask()
                                                     : b.best_bid();
         if (opp == 0) {
             r.reject = lob::Reject::UnknownReference;  // no reference at all
+            r.why = Why::UnkEmptyOpposite;
             return r;
         }
         price = side == lob::Side::Buy ? uint32_t(int64_t(opp) - tick)
@@ -123,12 +166,14 @@ inline Resolution resolve(const uint16_t t[5], const oftk::TickerBins& bins,
     } else if (e.lvl_off == -1) {
         if (e.type != oftk::MsgType::Add) {
             r.reject = lob::Reject::UnknownReference;  // no order inside
+            r.why = Why::InsideNonAdd;
             return r;
         }
         const uint32_t best = side == lob::Side::Buy ? b.best_bid()
                                                      : b.best_ask();
         if (best == 0) {
             r.reject = lob::Reject::UnknownReference;
+            r.why = Why::InsideNoBest;
             return r;
         }
         price = side == lob::Side::Buy ? uint32_t(int64_t(best) + tick)
@@ -137,11 +182,13 @@ inline Resolution resolve(const uint16_t t[5], const oftk::TickerBins& bins,
         if (e.type != oftk::MsgType::Add) {
             // A cancel "somewhere beyond +10" names no level.
             r.reject = lob::Reject::UnknownReference;
+            r.why = Why::TailNonAdd;
             return r;
         }
         uint32_t deep = 0;
         if (!detail::kth_level_price(b, side, oftk::kPxMax, deep)) {
             r.reject = lob::Reject::UnknownReference;
+            r.why = Why::TailNoDepth;
             return r;
         }
         price = side == lob::Side::Buy ? uint32_t(int64_t(deep) - tick)
@@ -149,6 +196,7 @@ inline Resolution resolve(const uint16_t t[5], const oftk::TickerBins& bins,
     } else {
         if (!detail::kth_level_price(b, side, e.lvl_off, price)) {
             r.reject = lob::Reject::UnknownReference;
+            r.why = Why::LevelAbsent;
             return r;
         }
     }
@@ -221,6 +269,7 @@ inline void drive(lob::Adapter& a, const std::vector<uint16_t>& stream,
         if (on_tuple) {
             Resolution r;
             r.reject = lob::Reject::Unparseable;
+            r.why = Why::Resync;
             lob::Outcome o;
             o.reject = lob::Reject::Unparseable;
             on_tuple(idx++, r, o);

@@ -99,6 +99,22 @@ struct IngestResult {
     uint64_t msgs_symbol = 0;             // raw book msgs, target symbol
     uint64_t events_inwindow = 0;
     uint64_t u_expanded = 0;  // U messages expanded to Delete+Add
+    // STRUCTURAL CLASSIFICATION of in-window ADD prices against the
+    // pre-event book (2026-07-31). PRICE_OFF records the COUNT of strictly
+    // better occupied levels, so "join occupied level k" and "open a NEW
+    // level just better than occupied level k" encode to the SAME token -
+    // and the shim's inverse always picks "join level k". These counters
+    // measure how much of real flow that conflation covers, instead of
+    // assuming it is rare. Adds only: E/C/X/D take their price from a
+    // standing order, which is at an occupied level by construction.
+    uint64_t add_at_level = 0;        // price == an occupied level: exact
+    uint64_t add_new_interior = 0;    // NEW level between two occupied ones
+    uint64_t add_new_bottom = 0;      // NEW level worse than every occupied
+    uint64_t add_inside = 0;          // better than best (lvl_off -1)
+    uint64_t add_no_side = 0;         // side empty (UNK)
+    uint64_t add_new_bottom_tail = 0; // of add_new_bottom, those at idx > 10
+                                      // (PX_TAIL, the one new-level case the
+                                      //  shim inverse can express)
 };
 
 namespace detail {
@@ -134,6 +150,34 @@ inline bool level_index(const lob::Book& b, lob::Side side, uint32_t price,
     if (idx == 0 && price != best) out = -1;  // better than the best
     else out = idx;
     return true;
+}
+
+// Where an ADD's price sits relative to the occupied levels on its side.
+// Partitions every add; see the IngestResult counters for why it matters.
+enum class AddPx : uint8_t { NoSide, Inside, AtLevel, NewInterior, NewBottom };
+
+inline AddPx classify_add(const lob::Book& b, lob::Side side, uint32_t price) {
+    const size_t n_levels =
+        side == lob::Side::Buy ? b.bid_levels() : b.ask_levels();
+    if (n_levels == 0) return AddPx::NoSide;
+    bool exact = false;
+    size_t n_better = 0;  // == lvl_off from level_index, by construction
+    b.for_each_level([&](lob::Side s, const lob::Level& lv) {
+        if (s != side) return true;
+        if (lv.price == price) {
+            exact = true;
+            return false;
+        }
+        const bool better = side == lob::Side::Buy ? lv.price > price
+                                                   : lv.price < price;
+        if (!better) return false;  // best-first: nothing further is better
+        ++n_better;
+        return true;
+    });
+    if (exact) return AddPx::AtLevel;
+    if (n_better == 0) return AddPx::Inside;          // better than best
+    if (n_better == n_levels) return AddPx::NewBottom;  // below the bottom
+    return AddPx::NewInterior;
 }
 
 inline int8_t dir_of(lob::Side s) {
@@ -231,6 +275,20 @@ inline bool ingest_day(const uint8_t* data, size_t size, uint16_t locate,
         out.events.push_back(e);
     };
 
+    auto count_add_px = [&](const lob::Book& b, lob::Side side,
+                            uint32_t price, int64_t lvl_off) {
+        switch (detail::classify_add(b, side, price)) {
+            case detail::AddPx::NoSide: ++out.add_no_side; break;
+            case detail::AddPx::Inside: ++out.add_inside; break;
+            case detail::AddPx::AtLevel: ++out.add_at_level; break;
+            case detail::AddPx::NewInterior: ++out.add_new_interior; break;
+            case detail::AddPx::NewBottom:
+                ++out.add_new_bottom;
+                if (lvl_off > oftk::kPxMax) ++out.add_new_bottom_tail;
+                break;
+        }
+    };
+
     auto fail = [&](const std::string& what, uint64_t ts) {
         if (err)
             *err = what + " at ts " + std::to_string(ts) +
@@ -284,6 +342,7 @@ inline bool ingest_day(const uint8_t* data, size_t size, uint16_t locate,
             add.ref = u->new_order_ref;
             add.ts = ts;
             add.has_px = detail::level_index(b, side, add.price, add.lvl_off);
+            if (in_window(ts)) count_add_px(b, side, add.price, add.lvl_off);
             emit(add);
             if (b.add(u->new_order_ref, side, u->shares, u->price) !=
                 lob::Result::Ok)
@@ -343,6 +402,8 @@ inline bool ingest_day(const uint8_t* data, size_t size, uint16_t locate,
         const lob::Side side =
             e.direction > 0 ? lob::Side::Buy : lob::Side::Sell;
         e.has_px = detail::level_index(b, side, e.price, e.lvl_off);
+        if (e.type == oftk::MsgType::Add && in_window(ts))
+            count_add_px(b, side, e.price, e.lvl_off);
         emit(e);
         if (lob::apply(b, *m) != lob::Result::Ok)
             return fail("apply reject", ts);

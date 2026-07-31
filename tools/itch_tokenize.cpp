@@ -54,7 +54,8 @@ std::string trim_stock(const itch::Stock& s) {
     return t;
 }
 
-// Auxiliary paths (manifest, outputs): -o / --pxhist / --szhist TRUNCATE
+// Auxiliary paths (manifest, outputs): -o / --pxhist / --szhist / --dthist
+// TRUNCATE
 // their target and enforce() only guards the day-file argument (review
 // 2026-07-30). Refined 2026-07-31: the first version refused ANY 8-digit
 // day token, which also blocked legitimate day-stamped artifact names
@@ -96,7 +97,7 @@ bool find_locate(const uint8_t* data, size_t size, const std::string& ticker,
 int main(int argc, char** argv) {
     const char* path = nullptr;
     std::string ticker, manifest_path, out_path, pxhist_path, szhist_path,
-        mutate;
+        dthist_path, mutate;
     bool roundtrip = false, override_flag = false;
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
@@ -112,6 +113,7 @@ int main(int argc, char** argv) {
         else if (a == "-o") out_path = next("-o");
         else if (a == "--pxhist") pxhist_path = next("--pxhist");
         else if (a == "--szhist") szhist_path = next("--szhist");
+        else if (a == "--dthist") dthist_path = next("--dthist");
         else if (a == "--mutate") mutate = next("--mutate");
         else if (a == "--roundtrip") roundtrip = true;
         else if (a == dataset::kOverrideFlag) override_flag = true;
@@ -125,7 +127,8 @@ int main(int argc, char** argv) {
         std::fprintf(stderr,
                      "usage: itch_tokenize <day-file> --ticker T "
                      "[--manifest M] [-o tokens.bin] [--roundtrip] "
-                     "[--mutate swap|pxoff] [--pxhist f.csv]\n");
+                     "[--mutate swap|pxoff] [--pxhist f.csv] "
+                     "[--szhist f.csv] [--dthist f.csv]\n");
         return 2;
     }
     dataset::enforce(path, override_flag);
@@ -133,6 +136,7 @@ int main(int argc, char** argv) {
     require_safe_aux("-o", out_path);
     require_safe_aux("--pxhist", pxhist_path);
     require_safe_aux("--szhist", szhist_path);
+    require_safe_aux("--dthist", dthist_path);
 
     std::vector<uint8_t> wire = slurp(path);
     if (wire.empty()) {
@@ -203,6 +207,22 @@ int main(int argc, char** argv) {
             100.0 * double(res.px_unk_inwin) / n, 100.0 * double(inside) / n,
             100.0 * double(tail) / n, 100.0 * double(deeper) / n);
     }
+    {
+        const uint64_t adds = res.add_at_level + res.add_new_interior +
+                              res.add_new_bottom + res.add_inside +
+                              res.add_no_side;
+        const double d = double(adds ? adds : 1);
+        std::printf(
+            "in-window ADD price vs pre-event book (%" PRIu64 " adds): "
+            "at-level %.2f%%  NEW-interior %.2f%%  NEW-below-bottom %.2f%% "
+            "(of which PX_TAIL %.2f%%)  inside %.2f%%  empty-side %.2f%%\n",
+            adds, 100.0 * double(res.add_at_level) / d,
+            100.0 * double(res.add_new_interior) / d,
+            100.0 * double(res.add_new_bottom) / d,
+            100.0 * double(res.add_new_bottom_tail) / d,
+            100.0 * double(res.add_inside) / d,
+            100.0 * double(res.add_no_side) / d);
+    }
     if (have_bins) {
         std::printf("tokens: %zu  dt_zero %.2f%%  dt_tail %.3f%%  sz_hist",
                     res.tokens.size(),
@@ -245,6 +265,25 @@ int main(int argc, char** argv) {
             return 1;
         }
         std::printf("wrote %s\n", szhist_path.c_str());
+    }
+
+    if (!dthist_path.empty()) {
+        // Exact in-window inter-event dt histogram (dt_ns,count) - the DT
+        // twin of --szhist. Added 2026-07-31 for the dead-bucket audit:
+        // occupancy alone cannot say what a bucket PRESERVES, and the DT
+        // quantizer had never been characterised at all.
+        std::map<int64_t, uint64_t> dh;
+        for (const ingest::Event& e : res.events)
+            if (e.in_win) ++dh[e.dt_ns];
+        std::ofstream dt(dthist_path);
+        dt << "dt_ns,count\n";
+        for (const auto& [v, c] : dh) dt << v << "," << c << "\n";
+        dt.flush();
+        if (!dt) {
+            std::fprintf(stderr, "cannot write %s\n", dthist_path.c_str());
+            return 1;
+        }
+        std::printf("wrote %s\n", dthist_path.c_str());
     }
 
     auto run_roundtrip = [&](const std::vector<ingest::Event>& evs,

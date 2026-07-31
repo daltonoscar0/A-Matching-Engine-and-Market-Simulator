@@ -18,7 +18,7 @@ add_executable(tests
   tests/test_bookset.cpp tests/test_codec.cpp tests/test_cst.cpp
   tests/test_dataset.cpp tests/test_fuzz.cpp tests/test_itch_replay.cpp
   tests/test_itch_tokenize.cpp tests/test_match.cpp
-  tests/test_token_shim.cpp)
+  tests/test_token_shim.cpp tests/test_warm_book.cpp)
 target_link_libraries(tests PRIVATE exchange_core)
 
 enable_testing()
@@ -59,3 +59,5 @@ add_executable(shim_drive tools/shim_drive.cpp)
 target_link_libraries(shim_drive PRIVATE exchange_core)
 add_executable(sim_health tools/sim_health.cpp)
 target_link_libraries(sim_health PRIVATE exchange_core)
+add_executable(warm_book tools/warm_book.cpp)
+target_link_libraries(warm_book PRIVATE exchange_core)

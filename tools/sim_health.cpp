@@ -22,7 +22,19 @@
 // Usage:
 //   sim_health <tokens.bin> --manifest M [--ticker T] [--csv out.csv]
 //              [--interval 100] [--seed-mid 1000000]
+//              [--warm-start snapshot.book] [--why]
 // Exit: 0 viable, 2 not viable, 1 error.
+//
+// --warm-start replaces the two-order seed with a REAL resting book
+// (tools/warm_book, 09:30 of a TRAIN day). Harness change, 2026-07-31: the
+// two-order seed leaves ONE occupied level per side, so every add at
+// PRICE_OFF 1..10 rejects UnknownReference no matter how good the model is
+// - the cold-start control proved it by killing the REAL token stream at
+// tuple 3. See src/warm_book.hpp.
+// --why prints the resolution-failure breakdown: which RULE refused, and
+// for level-index failures, which requested index. The four Reject
+// categories say a tuple failed; this says whether the model or the
+// initialization is at fault.
 #include <cinttypes>
 #include <cstdio>
 #include <cstdlib>
@@ -32,10 +44,12 @@
 #include <vector>
 
 #include "../src/token_shim.hpp"
+#include "../src/warm_book.hpp"
 
 int main(int argc, char** argv) {
     const char* bin_path = nullptr;
-    std::string manifest_path, ticker, csv_path;
+    std::string manifest_path, ticker, csv_path, warm_path;
+    bool why = false;
     uint32_t seed_mid = 1'000'000;
     size_t interval = 100;
     for (int i = 1; i < argc; ++i) {
@@ -54,6 +68,8 @@ int main(int argc, char** argv) {
             interval = size_t(std::atoll(next("--interval")));
         else if (a == "--seed-mid")
             seed_mid = uint32_t(std::atoll(next("--seed-mid")));
+        else if (a == "--warm-start") warm_path = next("--warm-start");
+        else if (a == "--why") why = true;
         else if (!bin_path) bin_path = argv[i];
         else {
             std::fprintf(stderr, "unexpected argument %s\n", argv[i]);
@@ -64,7 +80,7 @@ int main(int argc, char** argv) {
         std::fprintf(stderr,
                      "usage: sim_health <tokens.bin> --manifest M "
                      "[--ticker T] [--csv f] [--interval N] "
-                     "[--seed-mid PX]\n");
+                     "[--seed-mid PX] [--warm-start snap.book] [--why]\n");
         return 1;
     }
 
@@ -92,10 +108,31 @@ int main(int argc, char** argv) {
     const uint32_t tick = uint32_t(bins.tick_size > 0 ? bins.tick_size : 100);
 
     lob::Adapter a;
-    if (!a.submit({lob::ActionKind::Limit, lob::Side::Buy, seed_mid - tick,
-                   100}).applied() ||
-        !a.submit({lob::ActionKind::Limit, lob::Side::Sell, seed_mid + tick,
-                   100}).applied()) {
+    warm::Snapshot snap;
+    if (!warm_path.empty()) {
+        std::ifstream ws(warm_path);
+        if (!ws || !warm::read(ws, snap, &err) ||
+            !warm::apply(snap, a.book(), &err)) {
+            std::fprintf(stderr, "warm start %s: %s\n", warm_path.c_str(),
+                         err.c_str());
+            return 1;
+        }
+        if (!snap.ticker.empty() && snap.ticker != ticker) {
+            std::fprintf(stderr,
+                         "warm snapshot is %s but stream is %s - refused\n",
+                         snap.ticker.c_str(), ticker.c_str());
+            return 1;
+        }
+        std::printf("warm start: %s %s @ %" PRIu64 " -> %zu orders, "
+                    "%zu bid / %zu ask levels, best %u/%u\n",
+                    snap.ticker.c_str(), snap.day.c_str(), snap.ts_ns,
+                    a.book().open_orders(), a.book().bid_levels(),
+                    a.book().ask_levels(), a.book().best_bid(),
+                    a.book().best_ask());
+    } else if (!a.submit({lob::ActionKind::Limit, lob::Side::Buy,
+                          seed_mid - tick, 100}).applied() ||
+               !a.submit({lob::ActionKind::Limit, lob::Side::Sell,
+                          seed_mid + tick, 100}).applied()) {
         std::fprintf(stderr, "seeding failed\n");
         return 1;
     }
@@ -120,9 +157,36 @@ int main(int argc, char** argv) {
     bool died_before_500 = false;
     // OLS accumulators for open_orders vs tuple index (per checkpoint).
     double sx = 0, sy = 0, sxx = 0, sxy = 0;
+    // --why: which resolution rule refused, and for level-index failures
+    // which index was asked for (adds and cancels counted separately - the
+    // cold-start signature is adds at index >= 1 failing en masse).
+    std::vector<uint64_t> why_hist(size_t(shim::Why::kCount), 0);
+    std::vector<uint64_t> absent_add(size_t(oftk::kPxMax) + 2, 0);
+    std::vector<uint64_t> absent_cancel(size_t(oftk::kPxMax) + 2, 0);
+    std::vector<uint64_t> asked_add(size_t(oftk::kPxMax) + 2, 0);
+    uint64_t applied_add = 0, applied_cancel = 0, applied_exec = 0;
 
     auto hook = [&](size_t idx, const shim::Resolution& r,
                     const lob::Outcome& o) {
+        if (why) {
+            if (!r.ok) ++why_hist[size_t(r.why)];
+            const bool is_add = r.event.type == oftk::MsgType::Add;
+            if (r.why != shim::Why::DecodeFailed &&
+                r.why != shim::Why::Resync && r.event.has_ref &&
+                r.event.lvl_off >= 0) {
+                const size_t k = size_t(r.event.lvl_off > oftk::kPxMax
+                                            ? oftk::kPxMax + 1
+                                            : r.event.lvl_off);
+                if (is_add) ++asked_add[k];
+                if (r.why == shim::Why::LevelAbsent)
+                    (is_add ? absent_add : absent_cancel)[k] += 1;
+            }
+            if (o.applied()) {
+                if (r.action.kind == lob::ActionKind::Cancel) ++applied_cancel;
+                else if (r.action.kind == lob::ActionKind::Market) ++applied_exec;
+                else ++applied_add;
+            }
+        }
         if (r.ok || r.reject != lob::Reject::Unparseable)
             pseudo_t += uint64_t(r.event.dt_ns > 0 ? r.event.dt_ns : 0);
         if (o.applied() && o.filled > 0 &&
@@ -203,6 +267,28 @@ int main(int argc, char** argv) {
                                  std::to_string(dead_at_tuple) + ")")
                                     .c_str()
                               : "");
+    if (why) {
+        std::printf("resolution failures by rule:\n");
+        for (size_t w = 1; w < size_t(shim::Why::kCount); ++w)
+            if (why_hist[w])
+                std::printf("  %-20s %10" PRIu64 " (%.2f%% of tuples)\n",
+                            shim::why_name(shim::Why(w)), why_hist[w],
+                            c.tuples ? 100.0 * double(why_hist[w]) /
+                                           double(c.tuples)
+                                     : 0.0);
+        std::printf("level_absent by requested index (add / cancel; "
+                    "index %d = PX_TAIL):\n",
+                    oftk::kPxMax + 1);
+        for (size_t k = 0; k < absent_add.size(); ++k)
+            if (absent_add[k] || absent_cancel[k] || asked_add[k])
+                std::printf("  idx %2zu: adds asked %8" PRIu64
+                            "  add-absent %8" PRIu64 "  cancel-absent %8"
+                            PRIu64 "\n",
+                            k, asked_add[k], absent_add[k], absent_cancel[k]);
+        std::printf("applied by kind: add %" PRIu64 "  cancel %" PRIu64
+                    "  exec %" PRIu64 "\n",
+                    applied_add, applied_cancel, applied_exec);
+    }
     std::printf("viability: %s  (V1 signs>=500: %s, V2 two-sided>=90%%: "
                 "%s, V3 alive-through-500th-sign: %s)\n",
                 viable ? "VIABLE" : "NOT VIABLE", v1 ? "pass" : "FAIL",
