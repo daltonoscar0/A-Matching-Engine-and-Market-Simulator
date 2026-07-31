@@ -305,3 +305,45 @@ vocab change (new tuple semantics + retrain) and is the user's call. The
 LM can be trained on the current vocab; the cost is expressiveness on
 exactly the venue-idiosyncratic feature (wide spreads) the claim scope
 already flags.
+
+## PIPELINE TEST: pilot training run (Phase 6, 2026-07-30) - NOT A MODEL
+
+Label repeated because it matters: this is a PIPELINE PROOF, deliberately
+small and short, trained this session. It is NOT the scored LM column, no
+stylized facts were computed on its output, and no comparison to the null
+is made or implied. Nothing here is a headline result.
+
+Setup: tape's minigpt (4 layers, d_model 64, 4 heads, d_mlp 256, n_ctx
+320, vocab 52 - the architecture the context-length gate row shows CANNOT
+express the scored fact; irrelevant here, the question is only whether
+the pipeline runs), trained via tape.model_loader.train_spy UNCHANGED on
+this repo's BX tokens: SPY 20190130 (TRAIN day), pilot manifest with a
+within-day 80/20 chronological split (bins fit on the train prefix only,
+tools/itch_tokenize_fit --train-frac 0.8; the panel bins are untouched -
+separate manifest). 1000 steps, batch 16, lr 3e-3 cosine, CPU. Driver:
+out/tokens/pilot_train.py; artifacts in out/tokens/ (gitignored).
+
+Tokens in -> checkpoint out: train split 301,140 events (1,505,704
+tokens), eval split 75,285 events (376,429 tokens). Held-out loss
+(deterministic non-overlapping-window sweep, full splits): 1.1961 vs
+train 1.1567, gap +0.039 and widening slowly (0.007 at step 250) -
+normal early-training behavior, no anomaly. Throughput: 4.43 steps/sec =
+22,685 tokens/sec (CPU; the tape loader accepted this repo's OFTK bin +
+manifest with zero changes, which was the point).
+
+Sampling -> adapter: 15,002 tokens sampled autoregressively (temperature
+1.0, seed 0) from BOS SESSION_OPEN, written as an OFTK bin, and driven
+through the token<->action shim into the adapter (tools/shim_drive, book
+seeded two-sided at $100.00 +/- 1 tick):
+  3,043 tuples, 53 resyncs (misaligned garbage tokens), 2 specials.
+  applied 41 (1.35%) | Unparseable 74 (2.43%) | UnknownReference 2,928
+  (96.22%) | InvariantViolation 0 | EconomicallyAbsurd 0.
+  Book end state: audit clean, invariants held throughout.
+Reading, and only this much: the 1000-step model over-emits deletes
+(sampled TYPE histogram: 1551 ADD / 1417 DELETE / 34 EXEC / 2 CANCEL),
+drains the seeded book, and from then on every tuple that needs a price
+reference fails UnknownReference on an empty book - the expected garbage
+of a short run, and still a successful pipeline test per the phase
+definition: tokens in, checkpoint out, sampled stream in, adapter
+classifies every tuple, zero invariant violations. The pipeline is
+end-to-end proven; model quality was not the question.

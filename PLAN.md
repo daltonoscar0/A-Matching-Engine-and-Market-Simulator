@@ -1108,3 +1108,14 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   nothing changed silently: degenerate 1-share size buckets on a
   round-lot venue; -1 bucket granularity (vocab change = user's call).
   Frozen bins in out/tokens/manifest.json. Gates green.
+- 2026-07-30 Phase 6 (pilot, PIPELINE TEST - not a model): tape's minigpt
+  + train_spy consumed this repo's BX OFTK tokens UNCHANGED (SPY 20190130,
+  within-day 80/20 pilot split via --train-frac; panel bins untouched).
+  1000 CPU steps, held-out loss 1.196 vs train 1.157, 22.7k tokens/sec;
+  15k sampled tokens -> shim -> adapter: 1.35% applied, 96.2%
+  UnknownReference (short-run model drains the book then references
+  nothing), 2.4% Unparseable, 0 invariant violations, audit clean.
+  Expected garbage; pipeline proven end to end. tools/shim_drive is the
+  measurement harness (CMake entry lands with this commit). RESULTS.md
+  row labeled PIPELINE TEST; no stylized facts computed on its output.
+  Gates green.
