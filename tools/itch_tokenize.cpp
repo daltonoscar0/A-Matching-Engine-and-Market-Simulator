@@ -54,13 +54,24 @@ std::string trim_stock(const itch::Stock& s) {
     return t;
 }
 
-// Auxiliary paths (manifest, outputs) must never name a dataset day:
-// -o / --pxhist TRUNCATE their target, and enforce() only guards the
-// day-file argument (review 2026-07-30).
-void require_not_a_day(const char* what, const std::string& p) {
+// Auxiliary paths (manifest, outputs): -o / --pxhist / --szhist TRUNCATE
+// their target and enforce() only guards the day-file argument (review
+// 2026-07-30). Refined 2026-07-31: the first version refused ANY 8-digit
+// day token, which also blocked legitimate day-stamped artifact names
+// (SPY_20190130.tokens.bin). The actual hazards are (a) targeting a raw
+// data file - any *.BX_ITCH_50[.gz] name, whatever the day - and (b)
+// naming a sealed TEST day at all. TRAIN/VAL day tokens in artifact
+// names are fine.
+void require_safe_aux(const char* what, const std::string& p) {
     if (p.empty()) return;
-    if (dataset::classify(p.c_str()) != dataset::Access::OkNotADay) {
-        std::fprintf(stderr, "%s path %s names a dataset day - refused\n",
+    if (p.find(".BX_ITCH_50") != std::string::npos) {
+        std::fprintf(stderr, "%s path %s names a raw data file - refused\n",
+                     what, p.c_str());
+        std::exit(3);
+    }
+    if (dataset::classify(p.c_str()) == dataset::Access::TestBlocked) {
+        std::fprintf(stderr, "%s path %s names a sealed TEST day - "
+                             "refused\n",
                      what, p.c_str());
         std::exit(3);
     }
@@ -84,7 +95,8 @@ bool find_locate(const uint8_t* data, size_t size, const std::string& ticker,
 
 int main(int argc, char** argv) {
     const char* path = nullptr;
-    std::string ticker, manifest_path, out_path, pxhist_path, mutate;
+    std::string ticker, manifest_path, out_path, pxhist_path, szhist_path,
+        mutate;
     bool roundtrip = false, override_flag = false;
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
@@ -99,6 +111,7 @@ int main(int argc, char** argv) {
         else if (a == "--manifest") manifest_path = next("--manifest");
         else if (a == "-o") out_path = next("-o");
         else if (a == "--pxhist") pxhist_path = next("--pxhist");
+        else if (a == "--szhist") szhist_path = next("--szhist");
         else if (a == "--mutate") mutate = next("--mutate");
         else if (a == "--roundtrip") roundtrip = true;
         else if (a == dataset::kOverrideFlag) override_flag = true;
@@ -116,9 +129,10 @@ int main(int argc, char** argv) {
         return 2;
     }
     dataset::enforce(path, override_flag);
-    require_not_a_day("--manifest", manifest_path);
-    require_not_a_day("-o", out_path);
-    require_not_a_day("--pxhist", pxhist_path);
+    require_safe_aux("--manifest", manifest_path);
+    require_safe_aux("-o", out_path);
+    require_safe_aux("--pxhist", pxhist_path);
+    require_safe_aux("--szhist", szhist_path);
 
     std::vector<uint8_t> wire = slurp(path);
     if (wire.empty()) {
@@ -213,6 +227,24 @@ int main(int argc, char** argv) {
             return 1;
         }
         std::printf("wrote %s\n", pxhist_path.c_str());
+    }
+
+    if (!szhist_path.empty()) {
+        // Exact in-window event-size histogram (size,count) - the input
+        // the SIZE quantile buckets discretize; used to quantify what the
+        // 8-bucket quantization preserves.
+        std::map<uint32_t, uint64_t> sh;
+        for (const ingest::Event& e : res.events)
+            if (e.in_win) ++sh[e.size];
+        std::ofstream sz(szhist_path);
+        sz << "size,count\n";
+        for (const auto& [v, c] : sh) sz << v << "," << c << "\n";
+        sz.flush();
+        if (!sz) {
+            std::fprintf(stderr, "cannot write %s\n", szhist_path.c_str());
+            return 1;
+        }
+        std::printf("wrote %s\n", szhist_path.c_str());
     }
 
     auto run_roundtrip = [&](const std::vector<ingest::Event>& evs,

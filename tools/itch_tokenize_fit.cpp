@@ -88,12 +88,15 @@ int main(int argc, char** argv) {
                      "[--tick 100] <day-file>...\n");
         return 2;
     }
-    // The manifest is read AND rewritten; it must never name a dataset day
-    // (review 2026-07-30).
-    if (dataset::classify(manifest_path.c_str()) !=
-        dataset::Access::OkNotADay) {
-        std::fprintf(stderr, "--manifest path %s names a dataset day - "
-                             "refused\n",
+    // The manifest is read AND rewritten; it must never be a raw data
+    // file or name a sealed TEST day (review 2026-07-30; refined
+    // 2026-07-31 - TRAIN/VAL day tokens in artifact names are fine, the
+    // hazard is *.BX_ITCH_50 targets and TEST tokens).
+    if (manifest_path.find(".BX_ITCH_50") != std::string::npos ||
+        dataset::classify(manifest_path.c_str()) ==
+            dataset::Access::TestBlocked) {
+        std::fprintf(stderr, "--manifest path %s names a raw data file or "
+                             "sealed TEST day - refused\n",
                      manifest_path.c_str());
         return 3;
     }

@@ -347,3 +347,34 @@ of a short run, and still a successful pipeline test per the phase
 definition: tokens in, checkpoint out, sampled stream in, adapter
 classifies every tuple, zero invariant violations. The pipeline is
 end-to-end proven; model quality was not the question.
+
+## Size-bucket confound quantified (Step 0d, 2026-07-31)
+
+Context: the architecture Decision of 2026-07-31 (PLAN.md) logs the
+size-bucket confound so it can be REPORTED, not used to discount a loss.
+Numbers, from exact in-window size histograms of the 13 panel symbols
+pooled over the 3 bin-fit TRAIN days (out/tokens/phase5/szhist_*.csv,
+itch_tokenize --szhist; 8.03M events):
+
+Occupancy per SIZE bucket (b0..b7, % of events; manifest edges): the
+quantile promise of ~12.5% per bucket fails badly on round-lot-discrete
+data - upper_bound edges cannot split point masses. Pooled:
+[7.3, 28.0, 16.4, 13.5, 3.4, 5.6, 9.5, 16.1]. Extremes: IWO puts 81.7%
+in bucket 1 with buckets 2-5 at 0.0%; SOXL 79.8% in bucket 1; UVXY 67.9%
+in bucket 2. Full per-symbol table in the analysis output (occupancy
+rows reproduced in the szhist CSVs + manifest edges; recompute:
+scratchpad szconfound.py logic - bisect edges over the histogram).
+
+Variance preserved by the 8-level quantization (within-symbol, pooled =
+1 - sum SSE / sum SS):
+- with the DECODER's representatives (what the LM can emit): R2 = 0.619
+  pooled; per symbol 0.181 (UVXY) .. 0.979 (IJH), median ~0.63.
+- with per-bucket conditional means (the ceiling of ANY 8-level
+  quantizer at these edges): R2 = 0.779 pooled.
+So the LM's emittable size distribution carries ~62% of the within-
+symbol size variance the CST null draws exactly (the null samples the
+FULL empirical histogram). Asymmetry on record, with the standing
+caveat: this touches the DISTRIBUTIONAL SANITY CHECKS only; the two
+scored facts (flow-sign memory, vol-clustering persistence) do not
+depend on size resolution, and a loss on a scored fact is not explained
+by this row.

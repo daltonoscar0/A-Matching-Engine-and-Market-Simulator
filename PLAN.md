@@ -855,6 +855,57 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   NEW vs LOBSTER (BX's wide spreads leave room inside); formal re-measure
   in Phase 5.
 
+- 2026-07-31 ARCHITECTURE DECISION (user's, recorded verbatim in four
+  parts before any further work; resolves Blocked-on-you item 1).
+  (0a) OPTION (a) - grow n_ctx to span lag 100 - IS DEAD, and the binding
+  constraint is DATA AVAILABILITY, not compute. At 94,246 tokens, one
+  context window is ~5% of SPY's entire best day (1.88M tokens); across
+  13 symbols x 6 TRAIN days that is order-1,500 non-overlapping windows -
+  not a training set. A model whose context spans lag-100 flow memory
+  would overfit long before learning flow structure. Nine days of one
+  thin venue cannot support it. Recorded as a DATA-AVAILABILITY finding
+  so it is not revisited later as though it were a budget question;
+  compute makes it worse but is not what kills it.
+  (0b) OPTION (c) IS CHOSEN: train at n_ctx=320. The reframing that makes
+  this a real experiment rather than a concession: PRICE_OFF is a level
+  index resolved against the LIVE BOOK, and the book persists far beyond
+  64 events. So there is an information channel across the context gap
+  that direct token memory does not have - if a large participant is
+  working an order, the book's shape reflects it, and the model
+  conditions on that shape through every price token it emits. The
+  question this experiment now asks: CAN BOOK-STATE FEEDBACK CARRY
+  ORDER-FLOW MEMORY WHEN DIRECT TOKEN MEMORY CANNOT? Recorded as a
+  HYPOTHESIS TO BE TESTED, not an assumption that it works. Explicitly:
+  this changes NOTHING about the pre-registered scoring facts,
+  thresholds, or failure condition. Same bar, same protocol; the
+  pre-registration (c06df11 + amendment) stands unamended.
+  (0c) PRE-REGISTERED PREDICTION, written before any model exists so the
+  outcome-dependence is on record the way the lag-10 prediction was:
+  "Given the context gate, we expect flow-sign memory at short lags to
+  be reachable via book-state conditioning and long lags (approaching
+  100) to be weak or absent. If long-lag memory appears anyway, that is
+  a finding about closed-loop conditioning beyond what the context
+  arithmetic predicts and must be reported as such. If it does not
+  appear, the pre-registered failure condition applies as written - a
+  failing LM is a publishable result and the context gate is its
+  explanation, not its excuse."
+  (0d) THE SIZE-BUCKET CONFOUND, recorded now so it is reportable later
+  and NOT usable as a post-hoc discount. BX SPY size edges came out
+  [7,30,100,101,102,200,500]: eight buckets, three effectively identical
+  (the enforce_edge_invariants +1 bumps on round-lot mass). The CST null
+  draws sizes from the FULL empirical distribution; the LM can emit only
+  eight representative values. Since the null column showed fat tails
+  come from book mechanics plus empirical sizes, an LM that
+  underperforms on the DISTRIBUTIONAL SANITY CHECKS may be losing to its
+  tokenizer rather than its modeling. Explicit caveat, in the user's
+  words: this is logged so the asymmetry can be REPORTED, not so a loss
+  can be DISCOUNTED. It does not touch the two scored facts (flow
+  memory, vol-clustering persistence), which do not depend on size
+  resolution. If the LM loses on a SCORED fact, the size confound is not
+  an explanation. Quantification (occupancy per bucket and the variance
+  the 8-bucket quantization preserves) is in RESULTS.md 2026-07-31
+  "Size-bucket confound quantified".
+
 ## Blocked on you
 Four items, 2026-07-30. Each states specifically what it needs from you.
 1. ARCHITECTURE vs THE CONTEXT GATE (blocks the LM column). n_ctx=320
