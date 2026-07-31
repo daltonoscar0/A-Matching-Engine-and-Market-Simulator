@@ -68,46 +68,36 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
 - [ ] Almgren-Chriss baseline; RL or policy-gradient agent inside the sim
 
 ## Status
-- Read this cold: the ENGINE, MEASUREMENT APPARATUS, NULL COLUMN, INGEST,
-  and SHIM are all complete and committed; docs/CLAIM.md states what can
-  honestly be claimed today. What does NOT exist is the scored LM column.
-  Everything the LM needs is built and verified EXCEPT the model itself:
-  - tools/itch_tokenize{,_fit}: BX day -> reconstruction-driven 5-tuples
-    in tape's OFTK v2 format, round-trip tested (5-mutation-verified),
-    split-guarded. Panel bins frozen (out/tokens/manifest.json, 3 TRAIN
-    days; out/ is gitignored - the fit is deterministic, regenerate with
-    the fit tool if lost; edges recorded in RESULTS.md Phase 5 row).
-  - src/token_shim.hpp + tools/shim_drive: generated tuples drive the
-    adapter closed loop; rejection breakdown by category works (pilot).
-  - The full pipeline is PROVEN end to end: tape's train_spy consumed BX
-    tokens unchanged, sampled output was classified by the adapter
-    (RESULTS.md "PIPELINE TEST" row - explicitly not a model).
-  - THE GATE: the planned n_ctx=320 CANNOT express the pre-registered
-    scoring fact (RESULTS.md "Context-length gate": median 294.5x short;
-    64 events of context typically contain ZERO whole prior market-order
-    signs). The architecture decision is the USER'S and the LM work
-    below waits on it. The pre-registration is not amended; no n_ctx was
-    picked unilaterally.
-  - Training half lives in the REMOTE tape repo (github.com/daltonoscar0/
-    tape), not in ~/orderflow-lm (see the tape-reconciliation Decision);
-    the pilot used a scratch clone. TEST (20181228, 20200130) remains
-    SEALED; nothing in this session read it.
-- Next 3 tasks (first is blocked on the user; 2-3 follow from it):
-  1. USER DECIDES the architecture given the context gate (bigger n_ctx?
-     different tokenization? accept marginal-statistics-only long lags?).
-     If the decision changes tokenization, Phase 5's bins refit
-     mechanically (one fit-tool run per symbol).
-  2. Build the TRAIN corpus at the decided config: itch_tokenize each
-     panel symbol on each of the 6 TRAIN days with the frozen panel bins
-     (decompress 1-2 days at a time, ~1-2.4GB each, delete after; the
-     phase5 scripts in out/tokens/ show exact invocations), then the real
-     training run (hyperparameters + sampling temperature tuned on VAL
-     20190730 ONLY; exactly 7 sampling seeds per the amended
-     pre-registration).
-  3. The headline comparison, ONCE, per the seal protocol: all three
-     columns on TEST in a single pass behind
-     --i-am-running-the-final-comparison. Requires the user's explicit
-     go; a failing LM is a publishable result.
+- Read this cold (2026-07-31). Everything up to the model is DONE: engine,
+  measurement apparatus, null column, ingest (round-trip tested), shim,
+  stationarity diagnostic with a pre-registered viability bar, the full
+  88.4M-token TRAIN corpus (76 bins) + 13 VAL bins, and the architecture
+  decision (train at n_ctx=320; book-state-feedback hypothesis + lag
+  prediction on record; size confound quantified at R2 0.62). Throughput
+  is measured: 90 minutes on this machine's MPS = ~32,000 steps.
+- THE ONE HEADLINE FACT A COLD READER NEEDS: no model has yet produced a
+  VIABLE generated stream (bar: >=500 collapsed signs, two-sided >=90%,
+  book alive through the 500th sign). The 2,000-step checkpoint that
+  exists kills its own ask side within ~1k tuples and produces ZERO
+  signs. This is NOT yet evidence the approach fails - 2,000 steps is 6%
+  of the intended budget run, which was externally stopped twice and
+  never completed. THE 90-MINUTE-SCALE VIABILITY QUESTION IS UNANSWERED.
+  THE SEALED RUN MUST NOT BE SCHEDULED until a model passes viability
+  and the VAL sampling sweep has picked settings.
+- Next 3 tasks:
+  1. Complete the 32,000-step budget run UNINTERRUPTED (out/tokens/
+     train_corpus.py --steps 32000 --device mps; checkpoints every 1,000
+     steps now, so an interruption resumes cheap). Needs the user's
+     compute window - see Blocked on you.
+  2. Viability on its samples (out/tokens/sample.py + build/sim_health),
+     then - only if viable - the VAL-only sampling sweep
+     (out/tokens/sweep.sh; tuning signal is VIABILITY ONLY, never a
+     stylized fact - leakage rule in the Step 4 log entry).
+  3. Then the real LM column protocol: 7 sampling seeds at the chosen
+     settings, and the headline comparison ONCE behind
+     --i-am-running-the-final-comparison, with the user's explicit go.
+     If viability cannot be reached at feasible scale, THAT is the
+     finding to publish instead, and the sealed run does not happen.
 
 ## Decisions
 - 2026-07-27 Catch2 v2.13.10 vendored (third_party/catch.hpp), the one
@@ -907,27 +897,33 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   "Size-bucket confound quantified".
 
 ## Blocked on you
-Four items, 2026-07-30. Each states specifically what it needs from you.
-1. ARCHITECTURE vs THE CONTEXT GATE (blocks the LM column). n_ctx=320
-   holds 64 events; on BX the median symbol needs 94,246 tokens of
-   context to span lag 100 in collapsed-sign space, and even lag 1
-   typically needs 942 (RESULTS.md "Context-length gate"). Needs from
-   you: pick one of (a) grow n_ctx (a ~300x growth reaches the median
-   symbol; ~60x reaches only the sign-densest), (b) change the
-   representation so signs are denser per token (a tokenization redesign
-   - would reopen FORMAT_RECONCILIATION and refit bins), (c) train at
-   320 anyway, accepting the model can only match long-lag sign memory
-   through marginal statistics, never conditioning - and knowing the
-   pre-registered fact is then being asked of an architecture that
-   cannot see it. I did not amend anything; the pre-registration
-   (c06df11 + amendment) stands as written under all three options.
+Updated 2026-07-31. Each item states specifically what it needs from you.
+1. ARCHITECTURE vs THE CONTEXT GATE - RESOLVED 2026-07-31 by the user:
+   option (a) dead on data availability, option (c) chosen (train at
+   n_ctx=320), book-state-feedback hypothesis + pre-registered lag
+   prediction recorded, size confound quantified. Full text: the
+   2026-07-31 ARCHITECTURE DECISION entry above.
+1b. NEW - THE TRAINING RUN KEEPS GETTING STOPPED (blocks everything
+   downstream). The 32,000-step budget-bounded run (your Step 3
+   instruction) was externally stopped twice: at step 19,900 and, after
+   I restarted with periodic checkpointing, at step 2,300. I did not
+   restart a third time against what looked like a deliberate stop
+   signal, and my in-session question to you timed out. Needs from you:
+   either a compute window in which the ~85-minute run can finish
+   uninterrupted (it now checkpoints every 1,000 steps, so stops no
+   longer lose work - resume by rerunning train_corpus.py), or an
+   explanation of the stops if they weren't you (in which case I should
+   investigate what killed the processes), or a different venue for the
+   run. Until it completes, the viability question is unanswered and
+   the sealed run must not be scheduled.
 2. INSIDE-SPREAD BUCKET GRANULARITY (does not block; distorts). 20.9% of
    BX panel events price inside the spread and all land in the single -1
    bucket (RESULTS.md Phase 5). Needs from you: keep the 52-id vocab as
    is (my default if you say nothing - the window bounds are fine and
-   the cost lands on venue-idiosyncratic expressiveness), or approve a
-   depth-graded inside-spread split (vocab change, manifest version
-   bump, refit + retrain).
+   the cost lands on venue-idiosyncratic expressiveness; the 2026-07-31
+   corpus was built at the current vocab), or approve a depth-graded
+   inside-spread split (vocab change, manifest version bump, refit +
+   retrain + corpus rebuild).
 3. TAPE REPO DIVERGENCE - RESOLVED 2026-07-31 by the user: local HEAD
    (d8b15cc, the split-guard SPEC commit) pushed to daltonoscar0/tape as
    branch `split-guard-spec`, origin now configured in ~/orderflow-lm.
@@ -936,12 +932,13 @@ Four items, 2026-07-30. Each states specifically what it needs from you.
    history (local root b2395b8), so it will not merge cleanly - the
    split-guard SPEC text is simplest to cherry-pick/apply onto tape's
    pipeline/SPEC.md when convenient.
-4. REAL TRAINING RUN BUDGET (blocks task 2 in Status). The pilot did
-   4.4 steps/sec on CPU (22.7k tokens/sec) at the 320-ctx config; a
-   bigger n_ctx multiplies cost roughly linearly in context. Needs from
-   you: where the real run should execute (this Mac's MPS? CPU
-   overnight? elsewhere?) and roughly how long you are willing to let it
-   run - it determines corpus size and steps.
+4. REAL TRAINING RUN BUDGET - PARTIALLY RESOLVED 2026-07-31: you asked
+   me to establish it rather than guess; established (RESULTS.md Step 3a:
+   MPS ~6.4 steps/s realized, 90 min = ~32k steps ~= 1.9 epochs of the
+   88.4M-token corpus). What remains is item 1b: an uninterrupted window
+   to actually run it, and - for the SCORED run later - your call on
+   whether 90 minutes is also the budget for the real model or whether
+   it gets longer (200k steps = ~5.6h bench-rate, ~8.7h realized-rate).
 
 Resolved earlier 2026-07-30 (kept for the record):
   - LOBSTER samples: superseded. Real NASDAQ BX ITCH day landed in data/
@@ -1277,3 +1274,10 @@ Resolved earlier 2026-07-30 (kept for the record):
   tuned on VIABILITY ONLY, never toward a stylized fact - tuning toward
   a scored fact on VAL and then scoring on TEST is exactly the leakage
   the split exists to prevent.
+- 2026-07-31 Step 5: cold-resume rewritten - Status leads with the one
+  headline fact (no viable stream yet; the 90-minute-scale question is
+  UNANSWERED because the budget run was stopped twice; the sealed run
+  must not be scheduled until viability passes and the sweep has run);
+  Blocked-on-you updated (architecture resolved, training-window item
+  1b added, budget item partially resolved). Session: Steps 0/1/2/3
+  committed, Step 4 blocked by its own gate. TEST never read.
