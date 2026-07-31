@@ -1077,3 +1077,24 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   (incl. a marketable inside-spread add through match()), PartialCancel ==
   Delete, PX_TAIL, malformed/unresolvable tuples land in the right
   category, driver skips specials + resyncs. Gates green.
+- 2026-07-30 Phase 4 follow-up (adversarial review, 19-agent workflow, 14
+  confirmed findings / 1 refuted - all fixed, none waived): the round-trip
+  test had three REAL blind spots, each demonstrated by compiled repro
+  before fixing: (1) Delete-event SIZE was validated by neither layer
+  (b.remove ignores it; layer 2 was circular) - strict replay now checks
+  recorded side/price/size of every E/C/X/D event against the FRESH book's
+  standing order; (2) dt was never independently checked - now recomputed
+  from event timestamps in strict replay, with timestamps themselves
+  folded into both fingerprints so they cannot drift from raw; (3) the
+  fingerprint folded only the top-12 levels - now folds EVERY level.
+  Mutation suite extended to five (swap, pxoff event, pxoff token, size,
+  dt); all caught on synthetic AND the real TRAIN day; hardened
+  round-trip still PASSES full-day SPY 20190130. Tool hardening: -o /
+  --pxhist / --manifest paths that name a dataset day are refused up
+  front (they truncate their target and enforce() only guarded the day
+  argument - verified refusal against the sealed TEST .gz, file intact);
+  a capped run no longer swallows a desync that precedes the cap;
+  manifest rewrite is write-temp+rename so a failed write cannot destroy
+  other tickers' frozen bins; token/pxhist writes are flush-checked; the
+  unimplemented --max-frames flag doc removed; HALT-as-DT-gap divergence
+  from tape documented in the header. Gates green.

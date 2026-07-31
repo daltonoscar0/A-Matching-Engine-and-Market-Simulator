@@ -19,7 +19,12 @@
 //   - F -> Add (MPID dropped), C -> ExecVisible (exec price detail
 //     dropped by the level-index scheme), E -> ExecVisible, X ->
 //     PartialCancel, D -> Delete. P/Q/H are skipped upstream by
-//     FrameReader (not book types).
+//     FrameReader (not book types). Consequence, documented rather than
+//     hidden: the HALT/RESUME vocab ids are never emitted by this ingest,
+//     and a trading halt appears in the stream as one large DT gap rather
+//     than tape's HALT marker + clock advance. Acceptable for BX (halts
+//     are rare and carry no book change); revisit only if halt structure
+//     ever matters for a probe.
 // Zero-reject bar: any reject while applying real data is OUR bug and is
 // surfaced as a hard error, never tolerated.
 #ifndef EXCHANGE_ITCH_TOKENIZE_HPP
@@ -136,7 +141,10 @@ inline int8_t dir_of(lob::Side s) {
 }
 
 // FNV-1a over the observable book state; folded after every event so
-// intermediate states are compared, not just the (drained) close.
+// intermediate states are compared, not just the (drained) close. EVERY
+// level is folded (review 2026-07-30: a top-12 cap left divergence deeper
+// than level 12 invisible when aggregates matched), plus the event
+// timestamp, so a wrong recorded ts cannot agree with the raw side.
 struct Fingerprint {
     uint64_t h = 1469598103934665603ull;
     uint64_t folds = 0;
@@ -156,16 +164,12 @@ struct Fingerprint {
         fold(b.shares_executed());
         fold(b.shares_canceled());
         fold(b.shares_resting());
-        int nb = 0, na = 0;
         b.for_each_level([&](lob::Side s, const lob::Level& lv) {
-            int& n = s == lob::Side::Buy ? nb : na;
-            if (n < 12) {
-                ++n;
-                fold(lv.price);
-                fold(lv.total_shares);
-                fold(lv.order_count);
-            }
-            return nb < 12 || na < 12;
+            fold(uint64_t(s));
+            fold(lv.price);
+            fold(lv.total_shares);
+            fold(lv.order_count);
+            return true;
         });
     }
 };
@@ -235,8 +239,12 @@ inline bool ingest_day(const uint8_t* data, size_t size, uint16_t locate,
     };
 
     size_t seen = 0;
+    bool capped = false;
     while (auto m = rd.next()) {
-        if (max_msgs && ++seen > max_msgs) break;
+        if (max_msgs && ++seen > max_msgs) {
+            capped = true;
+            break;
+        }
         const uint16_t loc = lob::locate_of(*m);
         if (loc != locate) {
             if (set.apply(*m) != lob::Result::Ok)
@@ -339,7 +347,7 @@ inline bool ingest_day(const uint8_t* data, size_t size, uint16_t locate,
         if (lob::apply(b, *m) != lob::Result::Ok)
             return fail("apply reject", ts);
     }
-    if (rd.error && !max_msgs) {
+    if (rd.error && !capped) {
         if (err) *err = "malformed frame (desynced stream)";
         return false;
     }
@@ -352,18 +360,26 @@ inline bool ingest_day(const uint8_t* data, size_t size, uint16_t locate,
 
 // ---- round-trip layer 1: replay the exact expanded stream ------------------
 // Drives a fresh Book from the detokenizer-facing event stream (via exact
-// price/size/ref) and folds the running fingerprint. With recompute_lvl,
-// independently re-derives each event's PRICE_OFF from the fresh book
-// (pre-apply) and fails on mismatch - the check that catches a
-// wrong-book-state or off-by-one level index in the ingest.
+// price/size/ref) and folds the running fingerprint. With `strict`,
+// additionally validates every recorded field the raw replay would not
+// exercise on its own (review 2026-07-30 - these were blind spots):
+//   - PRICE_OFF re-derived from the fresh book pre-apply;
+//   - for Exec/Cancel/Delete, the recorded side/price must match the
+//     standing order in the FRESH book, and a Delete's recorded size must
+//     equal that order's remaining shares (b.remove ignores e.size, so
+//     without this the Delete SZ token was validated by nothing);
+//   - dt recomputed from the event timestamps (0 for the first emitted
+//     and for out-of-window events).
 inline bool replay_events(const std::vector<Event>& evs, lob::Book& b,
-                          bool recompute_lvl, detail::Fingerprint& fp,
+                          bool strict, detail::Fingerprint& fp,
                           std::string* err) {
+    bool have_prev_ts = false;
+    uint64_t prev_ts = 0;
     for (size_t i = 0; i < evs.size(); ++i) {
         const Event& e = evs[i];
         const lob::Side side =
             e.direction > 0 ? lob::Side::Buy : lob::Side::Sell;
-        if (recompute_lvl) {
+        if (strict) {
             int64_t idx = 0;
             const bool has = detail::level_index(b, side, e.price, idx);
             if (has != e.has_px || (has && idx != e.lvl_off)) {
@@ -374,6 +390,34 @@ inline bool replay_events(const std::vector<Event>& evs, lob::Book& b,
                            ", fresh book says " +
                            (has ? std::to_string(idx) : "UNK");
                 return false;
+            }
+            if (e.type != oftk::MsgType::Add) {
+                const lob::Order* o = b.find(e.ref);
+                if (!o || o->price != e.price ||
+                    detail::dir_of(o->side) != e.direction ||
+                    (e.type == oftk::MsgType::Delete &&
+                     o->shares != e.size)) {
+                    if (err)
+                        *err = "recorded side/price/size disagrees with the "
+                               "fresh book's standing order at event " +
+                               std::to_string(i);
+                    return false;
+                }
+            }
+            const int64_t want_dt =
+                e.in_win ? (have_prev_ts ? int64_t(e.ts) - int64_t(prev_ts)
+                                         : 0)
+                         : 0;
+            if (e.dt_ns != want_dt) {
+                if (err)
+                    *err = "dt mismatch at event " + std::to_string(i) +
+                           ": recorded " + std::to_string(e.dt_ns) +
+                           ", recomputed " + std::to_string(want_dt);
+                return false;
+            }
+            if (e.in_win) {
+                prev_ts = e.ts;
+                have_prev_ts = true;
             }
         }
         lob::Result r = lob::Result::Ok;
@@ -399,7 +443,10 @@ inline bool replay_events(const std::vector<Event>& evs, lob::Book& b,
                        ") at event " + std::to_string(i);
             return false;
         }
-        if (!e.pair_first) fp.fold_book(b);
+        if (!e.pair_first) {
+            fp.fold(e.ts);
+            fp.fold_book(b);
+        }
     }
     return true;
 }
@@ -413,17 +460,25 @@ inline bool replay_raw_symbol(const uint8_t* data, size_t size,
                               size_t max_msgs = 0) {
     itch::FrameReader rd{data, size};
     size_t seen = 0;
+    bool capped = false;
     while (auto m = rd.next()) {
-        if (max_msgs && ++seen > max_msgs) break;
+        if (max_msgs && ++seen > max_msgs) {
+            capped = true;
+            break;
+        }
         if (lob::locate_of(*m) != locate) continue;
         if (lob::apply(b, *m) != lob::Result::Ok) {
             if (err) *err = "raw replay reject at ts " +
                             std::to_string(ts_of(*m));
             return false;
         }
+        fp.fold(ts_of(*m));
         fp.fold_book(b);
     }
-    if (rd.error && !max_msgs) {
+    // A desync is fatal unless the loop stopped BECAUSE it hit the cap
+    // (review 2026-07-30: `!max_msgs` alone swallowed early desyncs, so a
+    // capped run could "verify" an arbitrarily short prefix of garbage).
+    if (rd.error && !capped) {
         if (err) *err = "malformed frame (desynced stream)";
         return false;
     }

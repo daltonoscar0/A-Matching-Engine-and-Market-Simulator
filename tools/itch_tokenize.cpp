@@ -17,8 +17,8 @@
 //
 // Usage:
 //   itch_tokenize <day-file> --ticker T [--manifest M] [-o tokens.bin]
-//                 [--roundtrip] [--mutate swap|pxoff] [--pxhist f.csv]
-//                 [--max-frames N] [--i-am-running-the-final-comparison]
+//                 [--roundtrip] [--mutate swap|pxoff|size|dt]
+//                 [--pxhist f.csv] [--i-am-running-the-final-comparison]
 #include <chrono>
 #include <cinttypes>
 #include <cstdio>
@@ -52,6 +52,18 @@ std::string trim_stock(const itch::Stock& s) {
     std::string t(s.begin(), s.end());
     while (!t.empty() && t.back() == ' ') t.pop_back();
     return t;
+}
+
+// Auxiliary paths (manifest, outputs) must never name a dataset day:
+// -o / --pxhist TRUNCATE their target, and enforce() only guards the
+// day-file argument (review 2026-07-30).
+void require_not_a_day(const char* what, const std::string& p) {
+    if (p.empty()) return;
+    if (dataset::classify(p.c_str()) != dataset::Access::OkNotADay) {
+        std::fprintf(stderr, "%s path %s names a dataset day - refused\n",
+                     what, p.c_str());
+        std::exit(3);
+    }
 }
 
 bool find_locate(const uint8_t* data, size_t size, const std::string& ticker,
@@ -104,6 +116,9 @@ int main(int argc, char** argv) {
         return 2;
     }
     dataset::enforce(path, override_flag);
+    require_not_a_day("--manifest", manifest_path);
+    require_not_a_day("-o", out_path);
+    require_not_a_day("--pxhist", pxhist_path);
 
     std::vector<uint8_t> wire = slurp(path);
     if (wire.empty()) {
@@ -192,6 +207,11 @@ int main(int argc, char** argv) {
         px << "UNK," << res.px_unk_inwin << "\n";
         for (const auto& [off, c] : res.px_hist)
             px << off << "," << c << "\n";
+        px.flush();
+        if (!px) {
+            std::fprintf(stderr, "cannot write %s\n", pxhist_path.c_str());
+            return 1;
+        }
         std::printf("wrote %s\n", pxhist_path.c_str());
     }
 
@@ -303,6 +323,54 @@ int main(int argc, char** argv) {
                         caught_tok ? ("caught (" + e2 + ")").c_str()
                                    : "NOT CAUGHT - TEST TOO WEAK");
             if (!caught_event || !caught_tok) return 1;
+        } else if (mutate == "size") {
+            // Bug model: the ingest records a wrong SIZE for a Delete
+            // (b.remove ignores it, so only the strict find-check can
+            // catch it - the review's blind spot, now closed).
+            std::vector<ingest::Event> mut = res.events;
+            size_t at = mut.size();
+            for (size_t i = 0; i < mut.size(); ++i)
+                if (mut[i].type == oftk::MsgType::Delete) {
+                    mut[i].size += 1;
+                    at = i;
+                    break;
+                }
+            if (at == mut.size()) {
+                std::fprintf(stderr, "no Delete event to mutate\n");
+                return 1;
+            }
+            std::string why;
+            ingest::detail::Fingerprint fp;
+            lob::Book fresh;
+            bool caught =
+                !ingest::replay_events(mut, fresh, true, fp, &why);
+            std::printf("mutation size(delete)@%zu: %s\n", at,
+                        caught ? ("caught (" + why + ")").c_str()
+                               : "NOT CAUGHT - TEST TOO WEAK");
+            if (!caught) return 1;
+        } else if (mutate == "dt") {
+            // Bug model: dt assigned wrongly to one in-window event.
+            std::vector<ingest::Event> mut = res.events;
+            size_t at = mut.size();
+            for (size_t i = 0; i < mut.size(); ++i)
+                if (mut[i].in_win) {
+                    mut[i].dt_ns += 1;
+                    at = i;
+                    break;
+                }
+            if (at == mut.size()) {
+                std::fprintf(stderr, "no in-window event to mutate\n");
+                return 1;
+            }
+            std::string why;
+            ingest::detail::Fingerprint fp;
+            lob::Book fresh;
+            bool caught =
+                !ingest::replay_events(mut, fresh, true, fp, &why);
+            std::printf("mutation dt@%zu: %s\n", at,
+                        caught ? ("caught (" + why + ")").c_str()
+                               : "NOT CAUGHT - TEST TOO WEAK");
+            if (!caught) return 1;
         } else {
             std::fprintf(stderr, "unknown mutation %s\n", mutate.c_str());
             return 2;
@@ -315,7 +383,9 @@ int main(int argc, char** argv) {
             return 2;
         }
         std::ofstream out(out_path, std::ios::binary);
-        if (!out || !oftk::write_token_bin(out, ticker, res.tokens)) {
+        bool ok = out && oftk::write_token_bin(out, ticker, res.tokens);
+        out.flush();  // surface buffered-tail errors the destructor swallows
+        if (!ok || !out) {
             std::fprintf(stderr, "cannot write %s\n", out_path.c_str());
             return 1;
         }

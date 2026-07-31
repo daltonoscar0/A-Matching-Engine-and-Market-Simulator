@@ -6,9 +6,17 @@
 // Fit sample = the same event stream tokenize emits: in-window expanded
 // events of the target symbol (sizes exact; dts nonzero only).
 //
+// --train-frac F (default 1.0) fits on the chronological prefix
+// floor(F * events) of the pooled stream and records the boundary in the
+// manifest fit provenance - tape's within-file split semantics, used by
+// the pilot run so held-out loss sees events the bins were never fit on.
+// The panel bins stay F = 1.0: this repo's real train/eval split is by
+// DAY (src/dataset.hpp), not within-file.
+//
 // Usage:
 //   itch_tokenize_fit --manifest M --ticker T [--tick 100]
-//                     <day-file>... [--i-am-running-the-final-comparison]
+//                     [--train-frac F] <day-file>...
+//                     [--i-am-running-the-final-comparison]
 #include <algorithm>
 #include <cinttypes>
 #include <cstdio>
@@ -55,6 +63,7 @@ std::string basename_of(const std::string& p) {
 int main(int argc, char** argv) {
     std::string ticker, manifest_path;
     int64_t tick = 100;
+    double train_frac = 1.0;
     bool override_flag = false;
     std::vector<const char*> days;
     for (int i = 1; i < argc; ++i) {
@@ -69,6 +78,7 @@ int main(int argc, char** argv) {
         if (a == "--ticker") ticker = next("--ticker");
         else if (a == "--manifest") manifest_path = next("--manifest");
         else if (a == "--tick") tick = std::atoll(next("--tick"));
+        else if (a == "--train-frac") train_frac = std::atof(next("--train-frac"));
         else if (a == dataset::kOverrideFlag) override_flag = true;
         else days.push_back(argv[i]);
     }
@@ -78,10 +88,21 @@ int main(int argc, char** argv) {
                      "[--tick 100] <day-file>...\n");
         return 2;
     }
+    // The manifest is read AND rewritten; it must never name a dataset day
+    // (review 2026-07-30).
+    if (dataset::classify(manifest_path.c_str()) !=
+        dataset::Access::OkNotADay) {
+        std::fprintf(stderr, "--manifest path %s names a dataset day - "
+                             "refused\n",
+                     manifest_path.c_str());
+        return 3;
+    }
 
-    std::vector<int64_t> sizes, dts;
-    uint64_t rows = 0;
-    int64_t last_ts = 0;
+    if (!(train_frac > 0.0 && train_frac <= 1.0)) {
+        std::fprintf(stderr, "--train-frac must be in (0, 1]\n");
+        return 2;
+    }
+    std::vector<int64_t> ev_sizes, ev_dts, ev_ts;
     std::string files;
     for (const char* path : days) {
         dataset::enforce(path, override_flag);
@@ -120,19 +141,25 @@ int main(int argc, char** argv) {
         }
         for (const ingest::Event& e : res.events) {
             if (!e.in_win) continue;
-            sizes.push_back(int64_t(e.size));
-            if (e.dt_ns > 0) dts.push_back(e.dt_ns);
-            last_ts = std::max(last_ts, int64_t(e.ts));
-            ++rows;
+            ev_sizes.push_back(int64_t(e.size));
+            ev_dts.push_back(e.dt_ns);
+            ev_ts.push_back(int64_t(e.ts));
         }
         files += (files.empty() ? "" : ",") + basename_of(path);
         std::printf("%s: %" PRIu64 " in-window events pooled\n", path,
                     res.events_inwindow);
     }
-    if (sizes.empty()) {
-        std::fprintf(stderr, "no in-window events - nothing to fit\n");
+    const uint64_t rows = ev_sizes.size();
+    const uint64_t n_train = uint64_t(train_frac * double(rows));
+    if (n_train < 2) {
+        std::fprintf(stderr, "training split has fewer than 2 events\n");
         return 1;
     }
+    std::vector<int64_t> sizes(ev_sizes.begin(),
+                               ev_sizes.begin() + ptrdiff_t(n_train));
+    std::vector<int64_t> dts;
+    for (uint64_t i = 0; i < n_train; ++i)
+        if (ev_dts[i] > 0) dts.push_back(ev_dts[i]);
 
     oftk::TickerEntry entry;
     entry.bins.tick_size = tick;
@@ -142,16 +169,17 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "fitted bins failed validity check\n");
         return 1;
     }
-    // Provenance bridged to tape's FitInfo: our train/eval split is by DAY
-    // (src/dataset.hpp), not chronological-within-file, so frac = 1.0 over
-    // the pooled TRAIN-day events and first_eval_time_ns = last + 1 (tape's
-    // frac-1.0 convention).
+    // Provenance bridged to tape's FitInfo. Panel bins use frac 1.0 (the
+    // real train/eval split is by DAY, src/dataset.hpp) and mark
+    // first_eval_time_ns = last + 1, tape's frac-1.0 convention; the pilot
+    // uses frac < 1 for a genuine within-file held-out split.
     entry.fit.messages_file = files;
-    entry.fit.train_frac = 1.0;
+    entry.fit.train_frac = train_frac;
     entry.fit.rows_total = rows;
-    entry.fit.train_end_index = rows;
-    entry.fit.last_train_time_ns = last_ts;
-    entry.fit.first_eval_time_ns = last_ts + 1;
+    entry.fit.train_end_index = n_train;
+    entry.fit.last_train_time_ns = ev_ts[n_train - 1];
+    entry.fit.first_eval_time_ns =
+        n_train < rows ? ev_ts[n_train] : ev_ts[rows - 1] + 1;
 
     oftk::Manifest m;
     {
@@ -166,12 +194,29 @@ int main(int argc, char** argv) {
         }
     }
     m.tickers[ticker] = entry;
-    std::ofstream out(manifest_path, std::ios::trunc);
-    if (!out) {
-        std::fprintf(stderr, "cannot write %s\n", manifest_path.c_str());
+    // Write-to-temp + rename: a failed write must not destroy the other
+    // tickers' frozen bins in the existing manifest (review 2026-07-30).
+    const std::string tmp_path = manifest_path + ".tmp";
+    {
+        std::ofstream out(tmp_path, std::ios::trunc);
+        if (!out) {
+            std::fprintf(stderr, "cannot write %s\n", tmp_path.c_str());
+            return 1;
+        }
+        oftk::write_manifest(out, m);
+        out.flush();
+        if (!out) {
+            std::fprintf(stderr, "write failed for %s\n", tmp_path.c_str());
+            std::remove(tmp_path.c_str());
+            return 1;
+        }
+    }
+    if (std::rename(tmp_path.c_str(), manifest_path.c_str()) != 0) {
+        std::fprintf(stderr, "cannot rename %s -> %s\n", tmp_path.c_str(),
+                     manifest_path.c_str());
+        std::remove(tmp_path.c_str());
         return 1;
     }
-    oftk::write_manifest(out, m);
 
     std::printf("%s: fit on %" PRIu64 " events (%zu days)\nsize_edges:",
                 ticker.c_str(), rows, days.size());

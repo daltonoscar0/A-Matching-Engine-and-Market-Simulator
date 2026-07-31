@@ -293,6 +293,37 @@ TEST_CASE("tokenize: the round-trip test fails under deliberate mutation") {
         CHECK_FALSE(ingest::replay_events(mut, fresh, true, fp, nullptr));
     }
 
+    SECTION("Delete SIZE off by one -> strict replay fails (b.remove "
+            "ignores size; the find-check is what validates it)") {
+        std::vector<ingest::Event> mut = res.events;
+        size_t at = mut.size();
+        for (size_t i = 0; i < mut.size(); ++i)
+            if (mut[i].type == oftk::MsgType::Delete) {
+                mut[i].size += 1;
+                at = i;
+                break;
+            }
+        REQUIRE(at < mut.size());
+        ingest::detail::Fingerprint fp;
+        lob::Book fresh;
+        CHECK_FALSE(ingest::replay_events(mut, fresh, true, fp, nullptr));
+    }
+
+    SECTION("dt off by one on an in-window event -> strict replay fails") {
+        std::vector<ingest::Event> mut = res.events;
+        size_t at = mut.size();
+        for (size_t i = 0; i < mut.size(); ++i)
+            if (mut[i].in_win) {
+                mut[i].dt_ns += 1;
+                at = i;
+                break;
+            }
+        REQUIRE(at < mut.size());
+        ingest::detail::Fingerprint fp;
+        lob::Book fresh;
+        CHECK_FALSE(ingest::replay_events(mut, fresh, true, fp, nullptr));
+    }
+
     SECTION("PRICE_OFF off by one level (token side) -> layer 2 fails") {
         ingest::IngestResult mut = res;
         size_t k = 0, tok_at = SIZE_MAX;
