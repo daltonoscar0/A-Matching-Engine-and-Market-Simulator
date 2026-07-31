@@ -68,23 +68,46 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
 - [ ] Almgren-Chriss baseline; RL or policy-gradient agent inside the sim
 
 ## Status
-- Current phase: 2 CLOSED on the engine side (match() + adapter both landed
-  2026-07-30). The loop is engine-complete; what remains before a real LM
-  column is the tokenizer's LOBSTER->ITCH change and the token<->action shim,
-  both of which are the user's next direction to pick (see below).
-- Next 3 tasks:
-  1. [U fork RESOLVED 2026-07-30: EXPAND to Delete+Add - see Decisions.]
-     Build the ITCH-driving adapter in
-     orderflow-lm: parse BX -> drive reconstruction -> emit
-     [TYPE][SIDE][PRICE_OFF][SIZE][DT]. Must consume src/dataset.hpp and
-     call dataset::enforce() (split guard, still unenforced on that side
-     because no loader exists yet).
-  2. Refit the frozen SIZE/DT bins on BX TRAIN and re-measure the PRICE_OFF
-     window / "-1-only" assumption on BX; a BX-trained tokenizer+model is a
-     from-scratch run (LOBSTER-SPY weights do not transfer).
-  3. Write the token<->EmittedAction shim above src/adapter.hpp so a trained
-     model can drive the closed loop; then the Phase 3 real-vs-LM-vs-null
-     table (null column already done; TEST still sealed).
+- Read this cold: the ENGINE, MEASUREMENT APPARATUS, NULL COLUMN, INGEST,
+  and SHIM are all complete and committed; docs/CLAIM.md states what can
+  honestly be claimed today. What does NOT exist is the scored LM column.
+  Everything the LM needs is built and verified EXCEPT the model itself:
+  - tools/itch_tokenize{,_fit}: BX day -> reconstruction-driven 5-tuples
+    in tape's OFTK v2 format, round-trip tested (5-mutation-verified),
+    split-guarded. Panel bins frozen (out/tokens/manifest.json, 3 TRAIN
+    days; out/ is gitignored - the fit is deterministic, regenerate with
+    the fit tool if lost; edges recorded in RESULTS.md Phase 5 row).
+  - src/token_shim.hpp + tools/shim_drive: generated tuples drive the
+    adapter closed loop; rejection breakdown by category works (pilot).
+  - The full pipeline is PROVEN end to end: tape's train_spy consumed BX
+    tokens unchanged, sampled output was classified by the adapter
+    (RESULTS.md "PIPELINE TEST" row - explicitly not a model).
+  - THE GATE: the planned n_ctx=320 CANNOT express the pre-registered
+    scoring fact (RESULTS.md "Context-length gate": median 294.5x short;
+    64 events of context typically contain ZERO whole prior market-order
+    signs). The architecture decision is the USER'S and the LM work
+    below waits on it. The pre-registration is not amended; no n_ctx was
+    picked unilaterally.
+  - Training half lives in the REMOTE tape repo (github.com/daltonoscar0/
+    tape), not in ~/orderflow-lm (see the tape-reconciliation Decision);
+    the pilot used a scratch clone. TEST (20181228, 20200130) remains
+    SEALED; nothing in this session read it.
+- Next 3 tasks (first is blocked on the user; 2-3 follow from it):
+  1. USER DECIDES the architecture given the context gate (bigger n_ctx?
+     different tokenization? accept marginal-statistics-only long lags?).
+     If the decision changes tokenization, Phase 5's bins refit
+     mechanically (one fit-tool run per symbol).
+  2. Build the TRAIN corpus at the decided config: itch_tokenize each
+     panel symbol on each of the 6 TRAIN days with the frozen panel bins
+     (decompress 1-2 days at a time, ~1-2.4GB each, delete after; the
+     phase5 scripts in out/tokens/ show exact invocations), then the real
+     training run (hyperparameters + sampling temperature tuned on VAL
+     20190730 ONLY; exactly 7 sampling seeds per the amended
+     pre-registration).
+  3. The headline comparison, ONCE, per the seal protocol: all three
+     columns on TEST in a single pass behind
+     --i-am-running-the-final-comparison. Requires the user's explicit
+     go; a failing LM is a publishable result.
 
 ## Decisions
 - 2026-07-27 Catch2 v2.13.10 vendored (third_party/catch.hpp), the one
@@ -833,7 +856,42 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   in Phase 5.
 
 ## Blocked on you
-- (nothing) - resolved 2026-07-30:
+Four items, 2026-07-30. Each states specifically what it needs from you.
+1. ARCHITECTURE vs THE CONTEXT GATE (blocks the LM column). n_ctx=320
+   holds 64 events; on BX the median symbol needs 94,246 tokens of
+   context to span lag 100 in collapsed-sign space, and even lag 1
+   typically needs 942 (RESULTS.md "Context-length gate"). Needs from
+   you: pick one of (a) grow n_ctx (a ~300x growth reaches the median
+   symbol; ~60x reaches only the sign-densest), (b) change the
+   representation so signs are denser per token (a tokenization redesign
+   - would reopen FORMAT_RECONCILIATION and refit bins), (c) train at
+   320 anyway, accepting the model can only match long-lag sign memory
+   through marginal statistics, never conditioning - and knowing the
+   pre-registered fact is then being asked of an architecture that
+   cannot see it. I did not amend anything; the pre-registration
+   (c06df11 + amendment) stands as written under all three options.
+2. INSIDE-SPREAD BUCKET GRANULARITY (does not block; distorts). 20.9% of
+   BX panel events price inside the spread and all land in the single -1
+   bucket (RESULTS.md Phase 5). Needs from you: keep the 52-id vocab as
+   is (my default if you say nothing - the window bounds are fine and
+   the cost lands on venue-idiosyncratic expressiveness), or approve a
+   depth-graded inside-spread split (vocab change, manifest version
+   bump, refit + retrain).
+3. TAPE REPO DIVERGENCE (data-loss risk, 2 minutes of your time). Your
+   local ~/orderflow-lm holds one commit that exists nowhere else:
+   d8b15cc "SPEC: split-guard requirement for the future ITCH ingest".
+   The remote tape repo does not have it and the local repo has NO
+   remote configured. Needs from you: push/merge that commit into
+   daltonoscar0/tape (or tell me to; I did not touch your repo per the
+   session rules).
+4. REAL TRAINING RUN BUDGET (blocks task 2 in Status). The pilot did
+   4.4 steps/sec on CPU (22.7k tokens/sec) at the 320-ctx config; a
+   bigger n_ctx multiplies cost roughly linearly in context. Needs from
+   you: where the real run should execute (this Mac's MPS? CPU
+   overnight? elsewhere?) and roughly how long you are willing to let it
+   run - it determines corpus size and steps.
+
+Resolved earlier 2026-07-30 (kept for the record):
   - LOBSTER samples: superseded. Real NASDAQ BX ITCH day landed in data/
     and became the ground truth (see Decisions). LOBSTER remains optional
     if we ever want an external orderbook diff.
@@ -1119,3 +1177,11 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   measurement harness (CMake entry lands with this commit). RESULTS.md
   row labeled PIPELINE TEST; no stylized facts computed on its output.
   Gates green.
+- 2026-07-30 Phase 8: cold-resume state written - Status now describes the
+  built-vs-missing split for a memoryless reader, Next 3 tasks reordered
+  around the architecture gate, Blocked-on-you lists 4 items each naming
+  specifically what it needs (architecture vs context gate; -1 bucket
+  granularity; the unpushed local tape SPEC commit; training-run budget).
+  Session ran phases 1-8 with 7 phase commits + 1 review-fix commit; the
+  adversarial review of the ingest (19 agents) confirmed 14 findings, all
+  fixed and re-verified on real data. TEST never read. Gates green.
