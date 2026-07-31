@@ -768,3 +768,59 @@ zero signs" - was substantially an artifact of the cold start, and that
 with a warm book an undertrained model already sustains a growing,
 partially two-sided book for 12,000 tuples. The sealed run remains
 unschedulable.
+
+## Step 7 (2026-07-31): SHIM REPAIRED - the real stream is VIABLE on all 6 TRAIN days
+
+Blocked-on-you item 5 decided as option (b), shim-only: no vocab change,
+no manifest bump, no bin refit, no corpus rebuild, no retrain. THE
+NEAREST-ACHIEVABLE-INDEX RULE.
+
+An ADD whose PRICE_OFF names an occupied level the book does not have now
+OPENS a level one tick beyond the deepest one, instead of rejecting -
+index L being the nearest index the book can offer. PX_TAIL anchors at
+level min(10, L-1), so behaviour is UNCHANGED whenever >= 11 levels exist.
+A PX_TAIL CANCEL takes the deepest occupied level rather than rejecting.
+UNK and -1 cancels still reject (an empty side has nothing to cancel;
+nothing rests inside the spread by construction). CANCELS AT AN ORDINARY
+ABSENT LEVEL STILL REJECT.
+
+VALIDATION - the same control that condemned the old harness:
+
+| SPY TRAIN day | tuples | applied | signs | viability |
+|---|---|---|---|---|
+| 20190130 | 376,425 | 99.78% | 5,623 | **VIABLE** |
+| 20190327 | 600,341 | 99.98% | 4,888 | **VIABLE** |
+| 20190530 | 187,332 | 99.65% | 2,034 | **VIABLE** |
+| 20190830 | 764,600 | 99.84% | 3,241 | **VIABLE** |
+| 20191030 | 190,638 | 99.65% | 2,471 | **VIABLE** |
+| 20191230 | 595,169 | 99.90% | 4,137 | **VIABLE** |
+
+V1, V2 and V3 all pass on all six. Before this row the same streams were
+NOT VIABLE cold (dead at tuple 3) and NOT VIABLE warm (dead at 8,265).
+The harness ceiling is gone: a viability verdict on model output is now a
+statement about the model.
+
+A WRONG TURN, KEPT ON THE RECORD BECAUSE THE MEASUREMENT IS THE POINT. The
+first version of the cancel rule was fully symmetric with the add rule -
+ANY absent-level cancel relocated to the deepest level - on the argument
+that a decoder generous to adds and strict to cancels must inflate depth
+(the add-only version did inflate it: +4,304 resting orders over a day,
+drift +4.84 per 1k). That argument was plausible and WRONG: measured, full
+symmetry collapses the book (applied 99.27% -> 11.74%, dead at tuple
+108,540), because tens of thousands of index-8..10 cancels then hammer the
+bottom levels. Scoping the relocation to PX_TAIL alone - 4,357 legitimate
+deep deletes a day - keeps viability AND fixes the inflation: applied
+99.27% -> 99.90%, rejects 4,370 -> 591, book end 4,304 -> 506 orders,
+drift +4.84 -> +0.62 per 1k. Under the add rule, ordinary absent-level
+cancels are 13 a day, so there was never anything there to fix.
+
+WHAT THIS COSTS, stated plainly. The decode of PRICE_OFF has changed, so
+every viability number recorded before this row is on the OLD decoder and
+is not comparable to numbers after it; the Step 1, 2 and 5 rows stand as
+measurements of the harness as it then was. The interior ambiguity is NOT
+fixed and cannot be without a vocabulary change: 9.40% of real SPY adds
+open a new level between two occupied ones, and the token cannot say so,
+so those still join the level below. Nothing in the pre-registration is
+touched - no scored fact, threshold, measurability rule, seed count or
+failure condition. This is a decoder change, in the same category as the
+warm start.

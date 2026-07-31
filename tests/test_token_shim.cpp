@@ -167,12 +167,55 @@ TEST_CASE("shim: malformed and unresolvable tuples hit the right category") {
                 lob::Reject::UnknownReference);
         REQUIRE(a.book().open_orders() == 1);
     }
-    SECTION("Add at a level index deeper than the book -> UnknownReference") {
+    SECTION("PX_TAIL cancel takes the DEEPEST level; an ordinary "
+            "absent-level cancel still rejects (2026-07-31, scoped)") {
+        // Real BX flow deletes orders deeper than level 10 thousands of
+        // times a day and they must land somewhere. The relocation is
+        // scoped to PX_TAIL and no further: relocating ordinary
+        // absent-level cancels the same way was tried and MEASURED, and it
+        // collapsed the book (real stream applied 99.3% -> 11.7%).
+        REQUIRE(a.submit({lob::ActionKind::Limit, lob::Side::Buy, 10000,
+                          100}).applied());
+        REQUIRE(a.submit({lob::ActionKind::Limit, lob::Side::Buy, 9900,
+                          100}).applied());
+        uint16_t tail[5] = {T_DELETE, S_BID, PX_TAIL_ID, SZ1, DT0};
+        shim::Resolution r = shim::resolve(tail, bins, a.book());
+        REQUIRE(r.ok);
+        REQUIRE_FALSE(r.opened_new_level);
+        REQUIRE(r.action.kind == lob::ActionKind::Cancel);
+        REQUIRE(r.action.price == 9900);  // deepest occupied bid level
+        REQUIRE(shim::step(a, tail, bins, c).applied());
+        REQUIRE(a.book().open_orders() == 1);
+
+        uint16_t t[5] = {T_DELETE, S_BID, PX5, SZ1, DT0};
+        REQUIRE(shim::resolve(t, bins, a.book()).why == shim::Why::LevelAbsent);
+    }
+    SECTION("UNK, -1 and empty-side cancels still reject") {
+        REQUIRE(a.submit({lob::ActionKind::Limit, lob::Side::Buy, 10000,
+                          100}).applied());
+        // An empty side has nothing to cancel, and nothing rests inside the
+        // spread by construction - a cancel's price comes from a standing
+        // order, so real data cannot produce -1. Both stay rejects.
+        uint16_t unk[5] = {T_DELETE, S_ASK, oftk::UNK, SZ1, DT0};
+        REQUIRE(shim::resolve(unk, bins, a.book()).why == shim::Why::UnkNonAdd);
+        uint16_t inside[5] = {T_DELETE, S_BID, PX_M1, SZ1, DT0};
+        REQUIRE(shim::resolve(inside, bins, a.book()).why ==
+                shim::Why::InsideNonAdd);
+        uint16_t empty_side[5] = {T_DELETE, S_ASK, PX0, SZ1, DT0};
+        REQUIRE(shim::resolve(empty_side, bins, a.book()).why ==
+                shim::Why::LevelAbsent);
+    }
+    SECTION("Add at an index deeper than the book OPENS a level at the "
+            "nearest achievable index (2026-07-31 anti-ratchet rule)") {
         REQUIRE(a.submit({lob::ActionKind::Limit, lob::Side::Buy, 10000,
                           100}).applied());
         uint16_t t[5] = {T_ADD, S_BID, PX5, SZ1, DT0};
-        REQUIRE(shim::step(a, t, bins, c).reject ==
-                lob::Reject::UnknownReference);
+        shim::Resolution r = shim::resolve(t, bins, a.book());
+        REQUIRE(r.ok);
+        REQUIRE(r.opened_new_level);
+        REQUIRE(r.action.price == 9900);  // one tick beyond the only level
+        REQUIRE(shim::step(a, t, bins, c).applied());
+        REQUIRE(a.book().bid_levels() == 2);
     }
     SECTION("adapter-level reject is counted in the merged breakdown") {
         // Cancel resolves (level exists) but the adapter rejects a Cancel

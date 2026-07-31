@@ -6,22 +6,45 @@
 // Resolution rules (PLAN.md 2026-07-30, Phase 7), representative and
 // deterministic - the decode of a lossy token can only be a representative:
 //   TYPE_ADD  -> Limit, side = SIDE slot, shares = size-bucket
-//     representative. Price from PRICE_OFF against the CURRENT book:
-//       0..+10 : price of that occupied same-side level (must exist, else
-//                UnknownReference - the model referenced a level that
-//                isn't there);
+//     representative. Price from PRICE_OFF against the CURRENT book, by
+//     the NEAREST-ACHIEVABLE-INDEX rule (2026-07-31; see below):
+//       0..+10 : price of that occupied same-side level if it exists;
+//                if the side has fewer levels than that, OPEN A NEW LEVEL
+//                one tick beyond the deepest occupied level - index L,
+//                the nearest index the book can actually offer;
 //       -1     : one tick inside the same-side best (needs a same-side
 //                best to be inside of);
-//       PX_TAIL: one tick beyond (worse than) the 11th occupied level
-//                (index 10; needs >= 11 occupied levels);
+//       PX_TAIL: one tick beyond occupied level min(10, L-1) - i.e.
+//                beyond level 10 exactly as before when >= 11 levels
+//                exist, and beyond the bottom when the book is shallower;
 //       UNK    : the side is empty; rest one tick off the OPPOSITE best
 //                (needs an opposite side, else UnknownReference - an
 //                empty book gives no price reference at all).
+//     WHY THE NEAREST-ACHIEVABLE RULE EXISTS. The first version rejected
+//     UnknownReference whenever the requested index was not occupied. That
+//     made level DESTRUCTION unrestricted while level CREATION happened
+//     only at the touch (-1), because PX_TAIL itself required >= 11 levels
+//     already - a DEPTH RATCHET that drove even the REAL token stream from
+//     11 occupied levels to 4 in 400 tuples and then to a dead book
+//     (RESULTS.md 2026-07-31 Step 2). Adds that name a level past the
+//     book's bottom now open one, which is what real flow does and what
+//     the ratchet was preventing. CANCEL/DELETE are NOT changed: an order
+//     that is not there cannot be cancelled, and inventing one would be a
+//     correctness bug rather than a decode choice.
 //   TYPE_EXEC -> Market from the OPPOSITE side (the SIDE slot names the
 //     standing order, so the aggressor is its counterparty), shares =
 //     representative. PRICE_OFF is not needed to act and is ignored.
-//   TYPE_CANCEL / TYPE_DELETE -> Cancel at (side, resolved level price);
-//     the level must exist (UNK/-1/absent level -> UnknownReference). The
+//   TYPE_CANCEL / TYPE_DELETE -> Cancel at (side, resolved level price),
+//     by the SAME nearest-achievable-index rule: target index
+//     min(requested, L-1), where requested is the PRICE_OFF index and 11
+//     for PX_TAIL. A PX_TAIL cancel is not garbage - real BX flow deletes
+//     orders deeper than level 10 4,357 times in one SPY day - and the
+//     first version rejected every one of them, which was an asymmetric
+//     decoder: adds fully resolvable, cancels not, so the book inflated by
+//     +4,304 orders over a day of real flow. UNK and -1 still reject: an
+//     empty side has nothing to cancel, and nothing rests inside the
+//     spread by construction (a cancel's price comes from a standing
+//     order, so real data cannot produce -1 - only model garbage can). The
 //     adapter's Cancel removes the FIFO head in full, so the partial/full
 //     distinction and the SIZE slot are dropped - cancel sizing is a
 //     sanity-check quantity, logged, not scored.
@@ -90,6 +113,9 @@ struct Resolution {
     lob::EmittedAction action;               // valid when ok
     oftk::ApproxEvent event;                 // decoded (valid if not
                                              // Unparseable-at-decode)
+    // Diagnostic: the add named an index the book does not have and was
+    // placed at the nearest achievable one, opening a new bottom level.
+    bool opened_new_level = false;
 };
 
 namespace detail {
@@ -109,6 +135,22 @@ inline bool kth_level_price(const lob::Book& b, lob::Side side, int64_t k,
             return false;
         }
         ++i;
+        return true;
+    });
+    return found;
+}
+
+// Price of the DEEPEST occupied level on `side`, plus the level count.
+// Returns false if the side is empty.
+inline bool deepest_level_price(const lob::Book& b, lob::Side side,
+                                uint32_t& out, size_t& n_levels) {
+    n_levels = 0;
+    bool found = false;
+    b.for_each_level([&](lob::Side s, const lob::Level& lv) {
+        if (s != side) return true;
+        out = lv.price;
+        found = true;
+        ++n_levels;
         return true;
     });
     return found;
@@ -178,26 +220,50 @@ inline Resolution resolve(const uint16_t t[5], const oftk::TickerBins& bins,
         }
         price = side == lob::Side::Buy ? uint32_t(int64_t(best) + tick)
                                        : uint32_t(int64_t(best) - tick);
-    } else if (e.lvl_off > oftk::kPxMax) {  // PX_TAIL
-        if (e.type != oftk::MsgType::Add) {
-            // A cancel "somewhere beyond +10" names no level.
-            r.reject = lob::Reject::UnknownReference;
-            r.why = Why::TailNonAdd;
-            return r;
-        }
-        uint32_t deep = 0;
-        if (!detail::kth_level_price(b, side, oftk::kPxMax, deep)) {
-            r.reject = lob::Reject::UnknownReference;
-            r.why = Why::TailNoDepth;
-            return r;
-        }
-        price = side == lob::Side::Buy ? uint32_t(int64_t(deep) - tick)
-                                       : uint32_t(int64_t(deep) + tick);
     } else {
-        if (!detail::kth_level_price(b, side, e.lvl_off, price)) {
-            r.reject = lob::Reject::UnknownReference;
-            r.why = Why::LevelAbsent;
-            return r;
+        // NEAREST ACHIEVABLE INDEX, one rule for both directions. The
+        // requested index is lvl_off, or 11 for PX_TAIL ("deeper than 10",
+        // whose shallowest member is index 11).
+        const bool is_add = e.type == oftk::MsgType::Add;
+        const int64_t want =
+            e.lvl_off > oftk::kPxMax ? int64_t(oftk::kPxMax) + 1 : e.lvl_off;
+        if (!detail::kth_level_price(b, side, want, price)) {
+            uint32_t deep = 0;
+            size_t n_levels = 0;
+            if (!detail::deepest_level_price(b, side, deep, n_levels)) {
+                // Side empty - the UNK path above is the only reference
+                // an empty side can offer, and it needs the opposite one.
+                r.reject = lob::Reject::UnknownReference;
+                r.why = e.lvl_off > oftk::kPxMax ? Why::TailNoDepth
+                                                 : Why::LevelAbsent;
+                return r;
+            }
+            if (is_add) {
+                // The add names a level deeper than the book has: OPEN one
+                // just beyond the bottom, the closest index available.
+                // Without this, level creation happens only at the touch
+                // while destruction happens anywhere - the depth ratchet.
+                price = side == lob::Side::Buy
+                            ? uint32_t(int64_t(deep) - tick)
+                            : uint32_t(int64_t(deep) + tick);
+                r.opened_new_level = true;
+            } else if (e.lvl_off > oftk::kPxMax) {
+                // PX_TAIL cancel: real flow deletes orders deeper than
+                // level 10 thousands of times a day and they must land
+                // somewhere - the deepest level that exists is the nearest
+                // achievable. Scoped DELIBERATELY to PX_TAIL and no
+                // further: relocating ordinary absent-level cancels the
+                // same way was tried and MEASURED, and it collapses the
+                // book (applied 99.3% -> 11.7% on the real stream), since
+                // tens of thousands of index-8..10 cancels then hammer the
+                // bottom. Under the add rule above those cancels are 13 a
+                // day anyway, so there is nothing there to fix.
+                price = deep;
+            } else {
+                r.reject = lob::Reject::UnknownReference;
+                r.why = Why::LevelAbsent;
+                return r;
+            }
         }
     }
     r.action.kind = e.type == oftk::MsgType::Add ? lob::ActionKind::Limit

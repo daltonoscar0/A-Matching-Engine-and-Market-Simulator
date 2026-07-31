@@ -4,10 +4,11 @@
 // resolution of every PRICE_OFF index. Refs differ by construction (the
 // tokenizer drops refs); nothing else may.
 //
-// The last case pins the 2026-07-31 cold-start finding itself: an add at a
-// level index the seeded book does not have rejects, and warm-starting is
-// exactly what makes it resolve. If someone later "simplifies" the seeding
-// back, that case fails.
+// The last two cases pin the 2026-07-31 findings themselves: a deep level
+// index resolves to a DIFFERENT price cold vs warm (so re-simplifying the
+// seeding back to two orders changes measured behaviour and fails a test),
+// and deep-index adds REBUILD depth rather than bouncing - the anti-ratchet
+// property the shim repair exists for.
 #include <sstream>
 #include <vector>
 
@@ -169,7 +170,7 @@ TEST_CASE("warm book: malformed snapshots are refused, not half-applied") {
     REQUIRE_FALSE(warm::apply(ok, seeded, &err));
 }
 
-TEST_CASE("warm book: cold seeding cannot resolve deep level indices") {
+TEST_CASE("warm book: a deep index means different prices cold vs warm") {
     oftk::TickerBins bins = test_bins();
 
     // THE COLD START (what sim_health did before 2026-07-31): two resting
@@ -182,12 +183,17 @@ TEST_CASE("warm book: cold seeding cannot resolve deep level indices") {
     const uint16_t at_idx3[5] = {T_ADD, S_BID, PX3, SZ1, DT0};
 
     REQUIRE(shim::resolve(at_best, bins, cold).ok);
+    // Under the anti-ratchet rule this now resolves, but only to the
+    // NEAREST ACHIEVABLE index - one tick under the single occupied level,
+    // three levels shallower than the token asked for. Warm-starting is
+    // what makes the requested index mean what it meant when it was
+    // recorded; the repair keeps the book alive, it does not make a
+    // one-level book carry four levels of information.
     shim::Resolution deep_cold = shim::resolve(at_idx3, bins, cold);
-    REQUIRE_FALSE(deep_cold.ok);
-    REQUIRE(deep_cold.reject == lob::Reject::UnknownReference);
-    REQUIRE(deep_cold.why == shim::Why::LevelAbsent);
+    REQUIRE(deep_cold.ok);
+    REQUIRE(deep_cold.opened_new_level);
+    REQUIRE(deep_cold.action.price == 999800);
 
-    // THE WARM START: the identical tuple resolves against a real book.
     lob::Book deep;
     build_deep(deep);
     lob::Book warmed;
@@ -195,5 +201,36 @@ TEST_CASE("warm book: cold seeding cannot resolve deep level indices") {
     REQUIRE(warm::apply(parse(dump(deep)), warmed, &err));
     shim::Resolution deep_warm = shim::resolve(at_idx3, bins, warmed);
     REQUIRE(deep_warm.ok);
+    REQUIRE_FALSE(deep_warm.opened_new_level);
     REQUIRE(deep_warm.action.price == 999200);  // 4th occupied bid level
+}
+
+TEST_CASE("shim: deep-index adds REBUILD depth - the anti-ratchet property") {
+    // The defect this pins (RESULTS.md 2026-07-31 Step 2): with the old
+    // rule, level destruction was unrestricted while level creation only
+    // happened at the touch, so occupied depth could only fall. Drive a
+    // stream that alternates a deep-index add with a delete of the best
+    // level - under the old rule the adds all rejected and the book
+    // drained; the book must now hold depth instead.
+    oftk::TickerBins bins = test_bins();
+    lob::Adapter a;
+    shim::Counts c;
+    REQUIRE(a.submit({lob::ActionKind::Limit, lob::Side::Buy, 999900,
+                      100}).applied());
+    REQUIRE(a.submit({lob::ActionKind::Limit, lob::Side::Sell, 1000100,
+                      100}).applied());
+
+    const uint16_t deep_add[5] = {T_ADD, S_BID, PX3, SZ1, DT0};
+    const uint16_t del_best[5] = {T_DELETE, S_BID, PX0, SZ1, DT0};
+    for (int i = 0; i < 40; ++i) {
+        REQUIRE(shim::step(a, deep_add, bins, c).applied());
+        REQUIRE(shim::step(a, deep_add, bins, c).applied());
+        shim::step(a, del_best, bins, c);  // may or may not resolve
+        REQUIRE(a.book().invariants_fast());
+    }
+    REQUIRE(a.book().audit().empty());
+    REQUIRE(a.book().bid_levels() > 1);       // depth was rebuilt, not lost
+    REQUIRE(a.book().open_orders() > 2);      // and the book is not draining
+    REQUIRE(c.rejects[size_t(lob::Reject::UnknownReference)] <
+            c.applied);                       // adds are no longer bouncing
 }
