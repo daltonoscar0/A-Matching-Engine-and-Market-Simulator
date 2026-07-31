@@ -877,13 +877,14 @@ Four items, 2026-07-30. Each states specifically what it needs from you.
    the cost lands on venue-idiosyncratic expressiveness), or approve a
    depth-graded inside-spread split (vocab change, manifest version
    bump, refit + retrain).
-3. TAPE REPO DIVERGENCE (data-loss risk, 2 minutes of your time). Your
-   local ~/orderflow-lm holds one commit that exists nowhere else:
-   d8b15cc "SPEC: split-guard requirement for the future ITCH ingest".
-   The remote tape repo does not have it and the local repo has NO
-   remote configured. Needs from you: push/merge that commit into
-   daltonoscar0/tape (or tell me to; I did not touch your repo per the
-   session rules).
+3. TAPE REPO DIVERGENCE - RESOLVED 2026-07-31 by the user: local HEAD
+   (d8b15cc, the split-guard SPEC commit) pushed to daltonoscar0/tape as
+   branch `split-guard-spec`, origin now configured in ~/orderflow-lm.
+   The data-loss risk is gone. Residual (optional): the branch is not
+   merged into tape's default branch, and it carries the PRE-subtree
+   history (local root b2395b8), so it will not merge cleanly - the
+   split-guard SPEC text is simplest to cherry-pick/apply onto tape's
+   pipeline/SPEC.md when convenient.
 4. REAL TRAINING RUN BUDGET (blocks task 2 in Status). The pilot did
    4.4 steps/sec on CPU (22.7k tokens/sec) at the 320-ctx config; a
    bigger n_ctx multiplies cost roughly linearly in context. Needs from
