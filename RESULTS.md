@@ -450,3 +450,43 @@ TRAIN tokens; ev/sign spans 70.5 (UVXY) to 3766.8 (SOXL), so a 320-token
 (64-event) context holds a whole sign interval only for the densest
 symbols on their densest days - the Step 0 architecture Decision's
 premise, now measured on the actual training corpus.
+
+## Step 3 (2026-07-31): throughput, INTERRUPTED budget run, viability
+
+3a. THROUGHPUT at the 320-ctx config (4L/d64/h4/mlp256, batch 16,
+fwd+bwd+opt on random tokens; out/tokens/bench_step.py):
+
+| device | steps/s | tokens/s | 10k steps | 50k steps | 200k steps |
+|---|---|---|---|---|---|
+| cpu | 5.44 | 27,836 | 31m | 2.6h | 10.2h |
+| mps | 9.95 | 50,968 | 17m | 1.4h | 5.6h |
+
+Realized training rate is lower than the bench (CPU window-gather +
+host->device transfer per step): ~6.4 steps/s sustained on MPS, so the
+90-minute budget fits ~32,000 steps (~164M training tokens ~= 1.9 epochs
+of the 88.4M-token corpus). A first launch at 45k steps was killed by me
+at step 600 once the realized rate showed it would blow the budget.
+
+3b. BUDGET-BOUNDED RUN - INTERRUPTED, reported as what it is. The
+32,000-step run on MPS was externally stopped twice (step 19,900 of the
+first attempt - no checkpoint survived, a design gap since fixed by
+periodic checkpointing; step 2,300 of the second attempt - the step-2,000
+periodic checkpoint survived). Not restarted a third time against an
+apparent deliberate stop signal; the user was asked and did not respond
+in time. What exists is therefore a 2,000-STEP checkpoint
+(out/tokens/bounded_run.pt): VAL held-out loss 1.1008 (vs 1.1432 at step
+1,000; running train loss ~1.06 at the stop). For calibration, the first
+(lost) attempt had reached train loss ~0.90 at step 19,900, so 2,000
+steps is far short of where 90 minutes lands. THE INTENDED QUESTION -
+does a 90-minute-scale model produce a viable stream - IS NOT ANSWERED;
+what follows answers it only for the 2,000-step scale.
+
+3c. VIABILITY of the 2,000-step checkpoint (sample.py: 4 streams x
+20,002 tokens, temperature 1.0, top-k 0, seed 0; sim_health, bar as
+pre-recorded): ALL FOUR STREAMS NOT VIABLE - V1/V2/V3 all FAIL. Book
+dead at tuples 12 / 72 / 195 / 916; ZERO collapsed signs in any stream;
+two-sided at 0.0% of checkpoints in all four (the ask side dies
+immediately and is never rebuilt - the model under-emits resting asks
+relative to deletes/executions at this training scale); longest-lived
+stream applied 7.6% of tuples, 91.5% UnknownReference. No stylized facts
+computed, no null comparison. Series: out/tokens/samples/health_*.csv.

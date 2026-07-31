@@ -1261,3 +1261,19 @@ Resolved earlier 2026-07-30 (kept for the record):
   build attempt failed wholesale on the over-broad aux-path guard (see
   Step 2 log entry); guard refined in the Step 0 commit, rebuild clean.
   Gates green.
+- 2026-07-31 Step 3: throughput table (MPS ~51k tok/s bench, ~6.4
+  steps/s realized; 90 min = ~32k steps); budget run INTERRUPTED - two
+  external stops (19.9k steps lost pre-checkpointing; 2.3k steps with
+  the 2,000-step periodic checkpoint surviving, VAL loss 1.10). Not
+  restarted against the stop signal; user asked, no answer in time.
+  Viability at the 2,000-step scale: 4/4 sampled streams NOT VIABLE
+  (zero signs, ask side dies immediately, book dead by tuple <=916).
+  The intended 90-minute-scale question is UNANSWERED. RESULTS.md row.
+  Gates green.
+- 2026-07-31 Step 4: BLOCKED per its own gate ("only if Step 3c produced
+  a viable stream") - 3c produced none. The sweep infrastructure exists
+  (out/tokens/sweep.sh + sample.py accept temperature/top-k) and the
+  leakage rule stands on record for when it runs: sampling params are
+  tuned on VIABILITY ONLY, never toward a stylized fact - tuning toward
+  a scored fact on VAL and then scoring on TEST is exactly the leakage
+  the split exists to prevent.
