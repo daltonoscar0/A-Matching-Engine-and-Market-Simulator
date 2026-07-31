@@ -1062,3 +1062,18 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   identical; 376,425 events token-verified); mutations swap/pxoff all
   caught on real data. 3.88M msgs/sec (BENCH.md). Gates green (0 warnings /
   ctest incl. new tests / 1M fuzz).
+- 2026-07-30 Phase 7 (committed BEFORE Phase 6, deliberately: the pilot's
+  adapter-rejection breakdown needs the shim to exist; order swap changes
+  nothing else): src/token_shim.hpp - OFTK 5-tuples -> EmittedActions above
+  the adapter. Resolution rules logged in the header + Decisions: ADD
+  resolves PRICE_OFF against the current book (0..+10 = that occupied
+  level, -1 = one tick inside, TAIL = one tick beyond level 10, UNK = one
+  tick off the opposite best), EXEC = Market from the OPPOSITE side,
+  CANCEL/DELETE = adapter Cancel at the resolved level (partial/full and
+  SIZE dropped - cancel sizing is sanity-check territory), EXEC_HIDDEN/
+  CROSS = Unparseable, DT ignored (no clock in the loop), stream driver
+  resyncs one token on misalignment. tests/test_token_shim.cpp (5 cases):
+  token sequence routes to the SAME book as hand-derived direct actions
+  (incl. a marketable inside-spread add through match()), PartialCancel ==
+  Delete, PX_TAIL, malformed/unresolvable tuples land in the right
+  category, driver skips specials + resyncs. Gates green.

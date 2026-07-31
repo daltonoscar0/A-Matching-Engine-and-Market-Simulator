@@ -17,7 +17,8 @@ add_executable(tests
   tests/main.cpp tests/test_adapter.cpp tests/test_book.cpp
   tests/test_bookset.cpp tests/test_codec.cpp tests/test_cst.cpp
   tests/test_dataset.cpp tests/test_fuzz.cpp tests/test_itch_replay.cpp
-  tests/test_itch_tokenize.cpp tests/test_match.cpp)
+  tests/test_itch_tokenize.cpp tests/test_match.cpp
+  tests/test_token_shim.cpp)
 target_link_libraries(tests PRIVATE exchange_core)
 
 enable_testing()
