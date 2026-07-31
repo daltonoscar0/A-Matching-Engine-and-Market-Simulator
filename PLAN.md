@@ -68,37 +68,45 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
 - [ ] Almgren-Chriss baseline; RL or policy-gradient agent inside the sim
 
 ## Status
-- Read this cold (2026-07-31). Everything up to the model is DONE: engine,
-  measurement apparatus, null column, ingest (round-trip tested), shim,
-  stationarity diagnostic with a pre-registered viability bar, the full
-  88.4M-token TRAIN corpus (76 bins) + 13 VAL bins, and the architecture
-  decision (train at n_ctx=320; book-state-feedback hypothesis + lag
-  prediction on record; size confound quantified at R2 0.62). Throughput
-  is measured: 90 minutes on this machine's MPS = ~32,000 steps.
-- THE ONE HEADLINE FACT A COLD READER NEEDS: no model has yet produced a
-  VIABLE generated stream (bar: >=500 collapsed signs, two-sided >=90%,
-  book alive through the 500th sign). The 2,000-step checkpoint that
-  exists kills its own ask side within ~1k tuples and produces ZERO
-  signs. This is NOT yet evidence the approach fails - 2,000 steps is 6%
-  of the intended budget run, which was externally stopped twice and
-  never completed. THE 90-MINUTE-SCALE VIABILITY QUESTION IS UNANSWERED.
-  THE SEALED RUN MUST NOT BE SCHEDULED until a model passes viability
-  and the VAL sampling sweep has picked settings.
+- Read this cold (2026-07-31, second session of the day). Everything up to
+  the model is DONE: engine, measurement apparatus, null column, ingest
+  (round-trip tested), shim, stationarity diagnostic with a pre-registered
+  viability bar, the 88.4M-token TRAIN corpus (76 bins) + 13 VAL bins, the
+  architecture decision, and now a WARM-START path so generation can begin
+  from a real book.
+- THE ONE HEADLINE FACT A COLD READER NEEDS, and it CHANGED today: the
+  earlier headline ("no model has produced a viable stream; the book dies
+  immediately with zero signs") was substantially AN ARTIFACT OF THE
+  HARNESS. The cold-start control proved it: the REAL BX token stream -
+  what a perfect model emits by construction - is ALSO not viable under
+  the old two-order seeding, dead at tuple 3. Every viability number
+  recorded before today measured initialization, not a model.
+- Where it actually stands now, warm-started, on a 7,000-step checkpoint:
+  STILL NOT VIABLE, 8 of 8 streams - but 5 of 8 keep the book alive for
+  12,000 tuples with POSITIVE order drift, the best applies 75.6% of
+  tuples and ends with 270 resting orders, and V3 passes for the first
+  time. V2 (two-sided >= 90%) is the real model failure: the book grows
+  one-sided. V1 (>= 500 signs) is NOT TESTABLE at the stream lengths ever
+  sampled - it needs ~0.5M+ tokens per stream and has never had them.
+- TWO THINGS BLOCK EVERYTHING DOWNSTREAM, both needing you (details in
+  Blocked on you): (1) the training run has now been killed THREE times,
+  and the cause is diagnosed - memory pressure with 379 MiB of free disk
+  and no room to grow swap, not a deliberate stop; (2) the shim has a
+  NAMED STRUCTURAL DEFECT that caps what any model can achieve through it
+  (the PRICE_OFF inverse cannot create interior price levels, so book
+  depth ratchets down). Neither is fixable by training.
+- THE SEALED RUN MUST NOT BE SCHEDULED. Nothing about TEST changed; TEST
+  was not read this session, not with the override.
 - Next 3 tasks:
-  1. Complete the 32,000-step budget run UNINTERRUPTED (out/tokens/
-     train_corpus.py --steps 32000 --device mps; checkpoints every 1,000
-     steps now, so an interruption resumes cheap). Needs the user's
-     compute window - see Blocked on you.
-  2. Viability on its samples (out/tokens/sample.py + build/sim_health),
-     then - only if viable - the VAL-only sampling sweep
-     (out/tokens/sweep.sh; tuning signal is VIABILITY ONLY, never a
-     stylized fact - leakage rule in the Step 4 log entry).
-  3. Then the real LM column protocol: 7 sampling seeds at the chosen
-     settings, and the headline comparison ONCE behind
-     --i-am-running-the-final-comparison, with the user's explicit go.
-     If viability cannot be reached at feasible scale, THAT is the
-     finding to publish instead, and the sealed run does not happen.
-
+  1. Decide the shim-defect question (Blocked on you 5). Until then a
+     viability verdict on any model is bounded by a harness ceiling.
+  2. Complete a budget training run on a machine with headroom - it needs
+     the machine to ITSELF plus disk, not a different venue (Blocked on
+     you 1b). Resume support does not exist yet: train_corpus.py always
+     starts from scratch, so a fourth kill costs everything again.
+  3. Then viability warm-started at ~0.5M tokens/stream (so V1 is
+     testable), and - only if viable - the VAL-only sampling sweep
+     (out/tokens/sweep.sh, which now REFUSES to run cold-started).
 ## Decisions
 - 2026-07-27 Catch2 v2.13.10 vendored (third_party/catch.hpp), the one
   allowed dependency. Fuzz hot loop uses raw aborts, not CHECKs - Catch2
@@ -896,6 +904,107 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   the 8-bucket quantization preserves) is in RESULTS.md 2026-07-31
   "Size-bucket confound quantified".
 
+- 2026-07-31 (Step 1, COLD-START CONTROL - a FINDING that invalidates
+  prior viability numbers) Every viability result recorded before today
+  measured the HARNESS, not the model. The control: run the REAL BX token
+  stream - by construction what a perfect model emits - through sim_health
+  under the IDENTICAL two-order seeding all prior runs used. It is NOT
+  VIABLE: book dead at tuple 3 (SPY 20190130), tuple 39 (SPY 20191230),
+  zero collapsed signs, 98%+ UnknownReference (RESULTS.md Step 1 row).
+  Mechanism: shim::resolve maps PRICE_OFF 0..+10 to "the price of that
+  occupied same-side level, must exist"; two resting orders leave ONE
+  occupied level per side, so only indices 0 and -1 can resolve, and Phase
+  5 measured 20.9% of panel events pricing inside the spread - so roughly
+  80% of a correctly-learned add distribution targets levels that are not
+  there at t=0. Adds fail, deletes succeed, the book drains, and an EMPTY
+  book is an ABSORBING state for this shim (every rule needs an existing
+  reference). CST never had this problem: it places at absolute tick
+  distances from the touch so it can build depth from nothing, and it got
+  an 08:00-09:30 warm-up. CONSEQUENCE FOR THE RECORD: the 2026-07-31 Step
+  3c row ("4/4 sampled streams NOT VIABLE" at the 2,000-step checkpoint)
+  and the Phase 6 pilot's 96.2% UnknownReference are NOT evidence about
+  those models. They are not retracted - they are re-labelled by this
+  Decision as measurements of the cold start. Diagnostic added so this
+  class of error is visible next time: shim::Why + sim_health --why name
+  the RULE that refused, not just the Reject category.
+
+- 2026-07-31 (Step 2, HARNESS CHANGE - explicitly not a model or scoring
+  change) --warm-start: generation may begin from a REAL resting book.
+  tools/warm_book replays a TRAIN day's pre-open flow through the SAME
+  ingest (ingest::ingest_day + strict ingest::replay_events, so no second
+  reconstruction exists) up to 09:30 and writes the resting book as a text
+  snapshot; sim_health and shim_drive load it instead of seeding two
+  orders. Framing, stated so it cannot be mistaken later: this makes the
+  LM's starting conditions COMPARABLE to the CST null's 08:00-09:30
+  warm-up, it does not advantage the LM - the null already had a warm
+  book by construction and the LM did not. No scored fact, threshold,
+  measurability rule, or failure condition is touched.
+  Implementation calls, logged for veto: (a) the replay lives in a
+  SEPARATE tool rather than inside sim_health, because the VAL sweep runs
+  sim_health dozens of times and re-replaying a multi-GB day per run is
+  untenable (the TRAIN days are gzipped and the machine has ~1GB of
+  headroom); the snapshot is a small inspectable artifact and the tools
+  just load it. (b) The snapshot stores every resting order in book order
+  (levels best-first, FIFO within level), so reload reproduces level
+  structure AND queue order exactly; only refs differ, and refs are
+  dropped by the tokenizer and unobservable through the shim.
+  (c) warm_book accepts NO override flag at all - a warm start has no
+  business reading a sealed day, so the guard cannot be talked out of it.
+  (d) The model is NOT primed with real tokens; only the book is warmed.
+  tests/test_warm_book.cpp pins the round-trip, shim-resolution
+  equivalence, refusal of malformed/crossed snapshots, and the cold-start
+  failure itself, so a future "simplification" back to two-order seeding
+  fails a test.
+
+- 2026-07-31 (Step 2, THE DEEPER DEFECT - measured, NOT fixed) Warm-started,
+  the real stream is STILL not viable (dead at tuple 8,265 vs 39 cold; 37
+  signs vs 0). Per the pre-registered branch of the instruction, that means
+  the shim itself is wrong, and it is: THE PRICE_OFF INVERSE IS NOT A
+  STRUCTURAL INVERSE. ingest::detail::level_index records the COUNT of
+  strictly-better occupied levels, so "join occupied level k" and "open a
+  NEW level just better than occupied level k" encode to the SAME token,
+  and shim::resolve always picks "join level k". Measured on real
+  in-window adds (itch_tokenize now reports the classification): SPY
+  56.46% at-level, 9.40% NEW-interior (inverse wrong), 34.14% inside the
+  spread and collapsed to exactly one tick, 0.00% below the book bottom.
+  Consequence is a DEPTH RATCHET: level destruction is unrestricted, level
+  creation happens only at the touch (-1) or via PX_TAIL which itself
+  REQUIRES >= 11 occupied levels, so a side that falls below 11 levels can
+  never rebuild depth. Observed: ask side 11 levels -> 4 within 400 tuples
+  while the order count still rises, then indices 8/9/10 and PX_TAIL - the
+  adds that would rebuild depth - reject en masse (12.4% of tuples).
+  Boring explanations checked and eliminated by measurement rather than
+  argument: partial-cancel-as-full-delete (0.02% of events),
+  add/delete imbalance (net +6,795 toward growth), adds below the bottom
+  (0.00%), invariant/absurd rejects (0).
+  WHY IT IS A CEILING: out/tokens/sample.py generates from the model's own
+  token history alone and passes NO book state, so a trained model, like
+  the real stream, requests level indices blind to the depth that exists.
+  The real stream is a fair UPPER BOUND on what any model on this
+  tokenization can reach through this shim, and it does not clear the bar.
+  NOT FIXED THIS SESSION, deliberately: every candidate repair changes what
+  the model emits or what the vocabulary means (see Blocked on you), and
+  that is a scope decision, not an implementation detail.
+
+- 2026-07-31 (Step 4, THE TRAINING KILLS ARE A RESOURCE PROBLEM, not a stop
+  signal) The third 32,000-step attempt died at step 7,600 with no
+  traceback and no nonzero exit in the log - a SIGKILL signature. It had
+  been launched double-forked into its own session with caffeinate, so a
+  harness teardown or idle sleep is ruled out. What the machine looked like
+  at the kill: 16 GiB RAM, 3.55 of 5 GiB swap in use, and 379 MiB of FREE
+  DISK - and the swap file lives on that volume, so macOS could not grow
+  swap. Concurrently running: a warm_book / itch_tokenize ingest, each of
+  which slurps an 863 MB day plus a full BookSet (multi-GB RSS). The boring
+  explanation fits every observation: memory pressure with no room to page
+  out, and jetsam takes the largest resident process, which is the trainer
+  holding the 88.4M-token corpus. It also retro-fits the earlier two stops -
+  both landed during heavy corpus-build ingests on a near-full disk. Acted
+  on rather than argued: the ingest pass was cut short at 7 of 13 symbols
+  and the decompressed day deleted the moment free disk hit 290 MiB.
+  Implication for the re-run: the trainer needs the machine to ITSELF, and
+  it needs disk headroom - not a different venue. Per the instruction, the
+  run was NOT restarted a fourth time.
+
 ## Blocked on you
 Updated 2026-07-31. Each item states specifically what it needs from you.
 1. ARCHITECTURE vs THE CONTEXT GATE - RESOLVED 2026-07-31 by the user:
@@ -903,19 +1012,24 @@ Updated 2026-07-31. Each item states specifically what it needs from you.
    n_ctx=320), book-state-feedback hypothesis + pre-registered lag
    prediction recorded, size confound quantified. Full text: the
    2026-07-31 ARCHITECTURE DECISION entry above.
-1b. NEW - THE TRAINING RUN KEEPS GETTING STOPPED (blocks everything
-   downstream). The 32,000-step budget-bounded run (your Step 3
-   instruction) was externally stopped twice: at step 19,900 and, after
-   I restarted with periodic checkpointing, at step 2,300. I did not
-   restart a third time against what looked like a deliberate stop
-   signal, and my in-session question to you timed out. Needs from you:
-   either a compute window in which the ~85-minute run can finish
-   uninterrupted (it now checkpoints every 1,000 steps, so stops no
-   longer lose work - resume by rerunning train_corpus.py), or an
-   explanation of the stops if they weren't you (in which case I should
-   investigate what killed the processes), or a different venue for the
-   run. Until it completes, the viability question is unanswered and
-   the sealed run must not be scheduled.
+1b. THE TRAINING RUN HAS NOW BEEN KILLED THREE TIMES - and the cause is
+   DIAGNOSED, so this is no longer a question about your intent. The
+   third attempt (launched double-forked into its own session under
+   caffeinate, so teardown and sleep are ruled out) died at step 7,600
+   of 32,000 with a SIGKILL signature. At the kill: 16 GiB RAM, 3.55 of
+   5 GiB swap in use, 379 MiB of FREE DISK - and the swap file lives on
+   that volume, so macOS could not grow swap while an ITCH ingest was
+   holding multi-GB RSS. jetsam takes the largest resident process,
+   which is the trainer holding the 88.4M-token corpus. The same
+   conditions fit both earlier stops (each landed during heavy
+   corpus-build ingests on a near-full disk). Per your instruction it
+   was NOT restarted a fourth time. Needs from you: disk headroom (the
+   volume is at 199 of 228 GiB with ~1 GiB free) and an agreement that
+   nothing else heavy runs alongside - not a different venue. NOTE a
+   real gap while you decide: train_corpus.py writes checkpoints but
+   CANNOT RESUME from one, so a fourth kill costs everything again;
+   adding resume is a small change I have not made because it was not
+   in scope. Say the word and it lands before the next attempt.
 2. INSIDE-SPREAD BUCKET GRANULARITY (does not block; distorts). 20.9% of
    BX panel events price inside the spread and all land in the single -1
    bucket (RESULTS.md Phase 5). Needs from you: keep the 52-id vocab as
@@ -939,6 +1053,44 @@ Updated 2026-07-31. Each item states specifically what it needs from you.
    to actually run it, and - for the SCORED run later - your call on
    whether 90 minutes is also the budget for the real model or whether
    it gets longer (200k steps = ~5.6h bench-rate, ~8.7h realized-rate).
+
+5. NEW, AND THE MOST CONSEQUENTIAL ONE - THE SHIM'S PRICE_OFF INVERSE IS
+   STRUCTURALLY WRONG, and it caps what ANY model can do through this
+   harness. Measured, not suspected (RESULTS.md Step 2 + the Decision):
+   level_index records the COUNT of strictly-better occupied levels, so
+   "join occupied level k" and "open a NEW level just better than level
+   k" are the SAME token, and the inverse always joins. 9.40% of real
+   SPY adds open a new interior level (inverse wrong); 34.14% price
+   inside the spread and are collapsed to exactly one tick of a 7-tick
+   BX spread. Level destruction is unrestricted while creation happens
+   only at the touch, so depth ratchets down and never rebuilds. The
+   real token stream - a fair upper bound, since sample.py feeds the
+   model NO book state - fails viability warm-started because of this.
+   I did NOT fix it: every candidate repair changes what the model emits
+   or what the vocabulary means, which is your call, not an
+   implementation detail. The options as I see them, with what each
+   costs:
+   (a) DO NOTHING and report the ceiling. Cheapest, honest, and the
+       publishable claim becomes narrower still: the pipeline is sound
+       and the generation harness cannot sustain a book.
+   (b) SHIM-ONLY REPAIR, no vocab change, no retrain, corpus untouched:
+       make PX_TAIL work below the current bottom (drop its >= 11-level
+       precondition) and let deep indices that fall past the book's
+       bottom open a new level one tick beyond it instead of rejecting.
+       This restores a depth-creation channel. It does NOT fix the
+       interior ambiguity, and it changes the DECODE of tokens already
+       in RESULTS rows, so prior viability rows would need re-labelling.
+   (c) TOKENIZER CHANGE - make PRICE_OFF distinguish "at level k" from
+       "new level before k" (one extra bit, or a signed sub-index).
+       Fixes it properly; costs a vocab change, manifest version bump,
+       bin refit, corpus rebuild and retrain. This is the same family as
+       item 2 below (inside-spread granularity) and they should be
+       decided together, since both are about PRICE_OFF resolution and
+       one rebuild could serve both.
+   My recommendation if you want one: decide 2 and 5 together, and if
+   you are rebuilding the corpus anyway, take (c). If you are not, take
+   (b) plus an explicit re-labelling note rather than (a), because (b)
+   is cheap and the ceiling it removes is large.
 
 Resolved earlier 2026-07-30 (kept for the record):
   - LOBSTER samples: superseded. Real NASDAQ BX ITCH day landed in data/
@@ -1274,6 +1426,29 @@ Resolved earlier 2026-07-30 (kept for the record):
   tuned on VIABILITY ONLY, never toward a stylized fact - tuning toward
   a scored fact on VAL and then scoring on TEST is exactly the leakage
   the split exists to prevent.
+- 2026-07-31 (second session) Steps 1-6. Step 1: THE COLD-START CONTROL -
+  the REAL BX token stream is NOT VIABLE under the two-order seeding
+  (dead at tuple 3), so every viability number recorded before today
+  measured the harness; shim::Why + sim_health --why added so the RULE
+  that refused is visible. Step 2: --warm-start landed (tools/warm_book,
+  src/warm_book.hpp, tests/test_warm_book.cpp) - a HARNESS change that
+  makes the LM's start comparable to CST's warm-up; the real stream is
+  still not viable warm-started, and the reason is now named and
+  measured: the PRICE_OFF inverse is not a structural inverse, so book
+  depth ratchets down (Decision + RESULTS.md). Boring explanations
+  (partial cancels, add/delete imbalance, adds below the bottom) were
+  each checked and eliminated by measurement. Step 3: dead-bucket audit -
+  IWO/SOXL/IWN carry literally dead SIZE buckets, 12 of 13 symbols carry
+  near-dead ones, the DT quantizer is healthy; reported, not fixed. Step
+  4: the 32,000-step run was killed a THIRD time at step 7,600, and the
+  cause is diagnosed as memory pressure at 379 MiB of free disk, not a
+  stop signal - not restarted, per instruction. Step 5: viability of the
+  surviving 7,000-step checkpoint, warm-started - NOT VIABLE 8/8, but V3
+  passes on 5/8 with positive drift and 75.6% applied at best; V2 is the
+  real model failure and V1 was never testable at any stream length ever
+  sampled. No VAL sweep (gated on viability); sweep.sh now refuses to run
+  cold. Step 6: this state. TEST never read; the headline comparison was
+  not run and was not approached.
 - 2026-07-31 Step 5: cold-resume rewritten - Status leads with the one
   headline fact (no viable stream yet; the 90-minute-scale question is
   UNANSWERED because the budget run was stopped twice; the sealed run

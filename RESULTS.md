@@ -673,3 +673,98 @@ REPORTED, NOT FIXED. A refit would rebuild the corpus; that is the user's
 call. Standing caveat from the 2026-07-31 architecture Decision applies
 unchanged: this is logged so the asymmetry can be REPORTED, not so a loss
 on a scored fact can be discounted.
+
+## Step 4 (2026-07-31): the 32,000-step run, THIRD KILL - and its cause
+
+Launched double-forked into its own session (own PGID, PPID 1) under
+`caffeinate -i -s`, so a harness teardown or idle sleep could not take it
+with it. It still died, at step 7,600 of 32,000, with no traceback and no
+nonzero exit in the log - a SIGKILL signature. Per the standing
+instruction it was NOT restarted a fourth time.
+
+What survived: out/tokens/run32k/budget32k.pt at step 7,000. VAL held-out
+loss curve, every 1,000 steps: 1.1421, 1.1000, 1.0697, 1.0432, 1.0286,
+1.0175, 1.0049. Still falling monotonically at the kill; 3.5x the training
+of the previous best checkpoint (which stopped at 2,000 steps / VAL 1.1008).
+Realized rate 6.9 steps/s, so 32,000 steps was on track for ~77 minutes.
+
+THE CAUSE IS A RESOURCE PROBLEM, NOT A STOP SIGNAL. Machine state at the
+kill: 16 GiB RAM, 3.55 of 5 GiB swap in use, and 379 MiB of FREE DISK - and
+the swap file lives on that volume, so macOS could not grow swap. Running
+concurrently: a warm_book / itch_tokenize ingest, each of which slurps an
+863 MB day file plus a full BookSet, for multi-GB RSS. Memory pressure with
+nowhere to page out, and jetsam takes the largest resident process - which
+is the trainer holding the 88.4M-token corpus. The same conditions fit both
+earlier stops: each landed during heavy corpus-build ingests on a near-full
+disk. Free disk fell to 290 MiB later in this session with no training
+running at all, which is what the ingests alone do to it.
+
+Acted on rather than argued: the ingest pass was cut short at 7 of 13
+symbols and the decompressed day deleted at 290 MiB, restoring 1.1 GiB.
+What the re-run needs is the machine to itself plus disk headroom - not a
+different venue.
+
+## Step 5 (2026-07-31): VIABILITY of the 7,000-step checkpoint, WARM-STARTED
+
+First viability numbers in this project that are about a MODEL rather than
+about the harness (Step 1). 8 streams x 60,002 tokens, temperature 1.0,
+top-k 0, seed 0; sim_health --warm-start (SPY 20191230 09:30 book), bar
+exactly as pre-recorded.
+
+| seed | tuples | applied | signs | two-sided | drift /1k | dead at | V1 | V2 | V3 |
+|---|---|---|---|---|---|---|---|---|---|
+| s0 | 12,027 | 8.09% | 6 | 1.7% | -0.58 | 1,518 | FAIL | FAIL | FAIL |
+| s1 | 12,050 | 15.34% | 12 | 3.3% | -2.95 | 4,405 | FAIL | FAIL | FAIL |
+| s2 | 12,035 | 63.23% | 34 | 31.7% | +13.92 | alive | FAIL | FAIL | pass |
+| s3 | 12,038 | 44.15% | 18 | 11.7% | -4.60 | 11,068 | FAIL | FAIL | FAIL |
+| s4 | 12,030 | 58.32% | 18 | 5.0% | +22.63 | alive | FAIL | FAIL | pass |
+| s5 | 12,059 | 56.49% | 34 | 5.0% | +30.50 | alive | FAIL | FAIL | pass |
+| s6 | 12,048 | 75.64% | 56 | 66.7% | +15.78 | alive | FAIL | FAIL | pass |
+| s7 | 12,039 | 55.69% | 34 | 3.3% | +19.08 | alive | FAIL | FAIL | pass |
+
+VERDICT: NOT VIABLE, 8 of 8. But the failure has moved, and that is the
+finding: 5 of 8 streams now keep the book ALIVE for the whole 12,000
+tuples with POSITIVE order drift (+14 to +31 per 1k), where every prior
+stream died within 1,000 tuples with zero signs. V3 passes for the first
+time. The best stream applies 75.6% of tuples and ends with 270 resting
+orders.
+
+V1 IS NOT TESTABLE AT THIS STREAM LENGTH - stated rather than scored
+around. Observed sign rates are 0.5-4.6 per 1,000 tuples (median 2.2),
+which is in the range real BX SPY produces; at those rates 500 signs needs
+108,000-232,000 tuples, i.e. 0.54M-1.16M tokens per stream, 9-19x what was
+sampled. The pre-recorded bar never fixed a stream length, so V1 has in
+fact never been testable in any run to date (the 2,000-step streams were
+20,002 tokens). The bar is NOT amended - it is recorded that V1's failures
+so far carry no information about any model, and that a stream must be
+~0.5M+ tokens before V1 means anything.
+
+V2 IS THE REAL MODEL FAILURE and it is not length-limited: two-sided at
+1.7-66.7% of checkpoints against a 90% bar. The book grows in order COUNT
+while staying ONE-SIDED - the model builds depth on one side. Since
+viability is a conjunction, V2 alone fixes the verdict at NOT VIABLE, so a
+longer sample could not change it; none was run.
+
+Best stream (s6) rejection breakdown: level_absent 17.51% of tuples,
+tail_non_add 3.07%, inside_no_best 2.00%, tail_no_depth 1.10%,
+decode_failed 0.14%, resync 0.50%, and 0 invariant / 0 absurd. Applied by
+kind: add 4,689, cancel 4,382, exec 42. Index 0 now resolves 90% of the
+time (141 absent of 1,391 asked) - the touch is real - while indices 5-10
+still fail 50-65% of the time, which is the Step 2 depth ratchet operating
+on model output exactly as it did on the real stream.
+
+NO VAL SWEEP WAS RUN: it is gated on viability, and viability failed. The
+sweep infrastructure now refuses to run cold-started (out/tokens/sweep.sh
+requires a warm snapshot), so it cannot silently reproduce the Step 1
+artifact when it does run. The leakage rule stands unchanged: sampling
+params are tuned on VIABILITY ONLY, never toward a stylized fact.
+
+WHAT THIS DOES AND DOES NOT ESTABLISH. It does not establish that the
+approach fails: 7,600 of 32,000 steps is 24% of a budget run that has now
+been killed three times, VAL loss was still falling monotonically, and the
+harness carries the named structural ceiling of Step 2. It does establish
+that the previous headline - "no viable stream, book dies immediately,
+zero signs" - was substantially an artifact of the cold start, and that
+with a warm book an undertrained model already sustains a growing,
+partially two-sided book for 12,000 tuples. The sealed run remains
+unschedulable.
