@@ -1252,3 +1252,12 @@ Resolved earlier 2026-07-30 (kept for the record):
   and sealed-TEST tokens, which is now exactly what it refuses (both
   refusals re-verified live, TRAIN/VAL-stamped artifacts allowed).
   Gates green.
+- 2026-07-31 Step 1: TRAIN corpus built - 76 TRAIN bins + 13 VAL bins,
+  88.4M TRAIN tokens / 17.7M events (RESULTS.md row with per-symbol
+  table + ev/sign next to the context gate). VXX absent 20190130 +
+  20190327 (old series matured), noted and continued. One decompressed
+  day at a time, all deleted after; 188MB of bins in gitignored
+  out/tokens/corpus/, deterministic rebuild via corpus_build.sh. First
+  build attempt failed wholesale on the over-broad aux-path guard (see
+  Step 2 log entry); guard refined in the Step 0 commit, rebuild clean.
+  Gates green.

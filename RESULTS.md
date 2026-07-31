@@ -413,3 +413,40 @@ deletes the seed orders almost immediately), 0 collapsed signs,
 two-sided at 0.0% of checkpoints, 96.2% UnknownReference. The
 diagnostic catches the known failure mode; that was the point of
 testing it on a known-bad stream. Series: out/tokens/pilot_health.csv.
+
+## TRAIN corpus built (Step 1, 2026-07-31)
+
+itch_tokenize, frozen panel bins (out/tokens/manifest.json), 13 panel
+symbols x 6 TRAIN days -> 76 OFTK bins (VXX absent from the 20190130 and
+20190327 stock directories - old series matured Jan 2019; noted, not an
+error) + 13 VAL-day (20190730) bins for held-out loss. One day
+decompressed at a time, deleted after. 188MB in out/tokens/corpus/
+(gitignored; deterministic - rebuild via out/tokens/corpus_build.sh).
+
+Per symbol (TRAIN days pooled; ev/sign = in-window events per collapsed
+sign over the days where the sign count is known from the stylized
+summaries - top-20 coverage in the sign-days column):
+
+| sym | days | events | tokens | sign-days | signs | ev/sign |
+|---|---|---|---|---|---|---|
+| IWM | 6 | 1790604 | 8953044 | 6 | 12508 | 143.2 |
+| SPY | 6 | 2714505 | 13572549 | 6 | 22512 | 120.6 |
+| XLK | 6 | 1577673 | 7888389 | 6 | 6517 | 242.1 |
+| QQQ | 6 | 1782996 | 8915004 | 6 | 10003 | 178.2 |
+| IWO | 6 | 1253049 | 6265269 | 5 | 359 | 3125.5 |
+| UVXY | 6 | 1105543 | 5527739 | 5 | 13215 | 70.5 |
+| SOXL | 6 | 1215243 | 6076239 | 5 | 285 | 3766.8 |
+| TLT | 6 | 1101460 | 5507324 | 5 | 6001 | 153.1 |
+| IJH | 6 | 1322682 | 6613434 | 4 | 703 | 1573.2 |
+| XLE | 6 | 1134130 | 5670674 | 4 | 4249 | 208.1 |
+| XLV | 6 | 886756 | 4433804 | 4 | 1941 | 371.8 |
+| IWN | 6 | 948855 | 4744299 | 4 | 489 | 1544.8 |
+| VXX | 4 | 848794 | 4243986 | 4 | 7936 | 107.0 |
+| ALL | - | 17682290 | 88411754 | | | |
+| VAL 20190730 | 1 | 1924809 | 9624097 | | | |
+
+Context-gate cross-reference: at 5 tokens/event the corpus is 88.4M
+TRAIN tokens; ev/sign spans 70.5 (UVXY) to 3766.8 (SOXL), so a 320-token
+(64-event) context holds a whole sign interval only for the densest
+symbols on their densest days - the Step 0 architecture Decision's
+premise, now measured on the actual training corpus.
