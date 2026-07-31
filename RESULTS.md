@@ -616,3 +616,60 @@ diverges from the real one, recorded level indices refer to a book that no
 longer exists. Two things keep the control load-bearing anyway: divergence
 cannot explain a death at tuple 3 (Step 1), and the divergence is itself
 STARTED by the defect above (the first misplaced interior add).
+
+## Step 3 (2026-07-31): DEAD-BUCKET AUDIT, per panel symbol
+
+Trigger: Step 0d reported 61.9% pooled variance preserved with a per-symbol
+range of 0.18 to 0.98, and IWO with 81.7% of events in one bucket. This row
+asks the per-symbol question directly, since the comparison is per-symbol.
+Method: exact SIZE and DT token-bucket counts over ALL 6 TRAIN days of the
+corpus bins (not a sample); variance preserved from the exact szhist
+histograms. Full table: out/tokens/phase5/bucket_audit_20260731.txt.
+
+SIZE bucket occupancy (% of events, 8 buckets), dead = ZERO events on all
+6 TRAIN days; R2dec = variance the DECODER representatives preserve (what
+the LM can emit), R2max = the ceiling of any 8-level quantizer at these
+edges:
+
+| sym | b0 | b1 | b2 | b3 | b4 | b5 | b6 | b7 | dead | <0.1% | R2dec | R2max |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| IWM | 11.21 | 3.54 | 44.54 | 0.00 | 0.00 | 10.56 | 20.63 | 9.52 | 0 | 2 | 0.631 | 0.980 |
+| SPY | 5.13 | 5.68 | 3.81 | 40.09 | 0.00 | 0.71 | 22.74 | 21.84 | 0 | 1 | 0.487 | 0.614 |
+| XLK | 2.11 | 26.63 | 0.17 | 7.53 | 20.45 | 11.17 | 11.33 | 20.62 | 0 | 0 | 0.788 | 0.853 |
+| QQQ | 8.09 | 9.37 | 45.43 | 0.00 | 0.09 | 10.16 | 13.02 | 13.84 | 0 | 2 | 0.602 | 0.763 |
+| IWO | 2.59 | 77.76 | 0.00 | 0.00 | 0.00 | 0.00 | 1.46 | 18.19 | **4** | 4 | 0.884 | 0.956 |
+| UVXY | 7.57 | 1.17 | 75.31 | 0.01 | 0.01 | 0.01 | 5.75 | 10.16 | 0 | 3 | 0.181 | 0.276 |
+| SOXL | 0.03 | 75.80 | 0.00 | 0.00 | 0.00 | 0.00 | 5.74 | 18.44 | **2** | 5 | 0.891 | 0.984 |
+| TLT | 2.08 | 44.62 | 0.00 | 0.00 | 5.85 | 18.11 | 7.62 | 21.72 | 0 | 2 | 0.543 | 0.776 |
+| IJH | 0.08 | 32.06 | 7.58 | 20.56 | 0.00 | 8.48 | 14.64 | 16.60 | 0 | 2 | 0.979 | 0.993 |
+| XLE | 8.54 | 19.88 | 0.08 | 6.55 | 23.76 | 6.52 | 16.65 | 18.02 | 0 | 1 | 0.865 | 0.908 |
+| XLV | 0.95 | 38.68 | 0.00 | 3.94 | 11.93 | 16.32 | 11.04 | 17.15 | 0 | 1 | 0.919 | 0.945 |
+| IWN | 1.49 | 29.88 | 0.32 | 51.23 | 0.00 | 0.00 | 1.24 | 15.84 | **2** | 2 | 0.398 | 0.709 |
+| VXX | 9.12 | 13.40 | 0.32 | 26.32 | 0.02 | 1.16 | 8.77 | 40.91 | 0 | 1 | 0.264 | 0.510 |
+| POOLED | 4.83 | 25.98 | 15.00 | 13.00 | 4.32 | 6.26 | 12.44 | 18.17 | | | | |
+
+FLAGGED - symbols with a literally DEAD size bucket (zero events, 6 TRAIN
+days): IWO (4 dead: buckets 2,3,4,5), SOXL (2 dead: 4,5), IWN (2 dead:
+4,5). No other panel symbol has one. Counting near-dead buckets (<0.1% of
+events) instead, 12 of 13 symbols have at least one and SOXL has 5 - so
+the effective size vocabulary is smaller than 8 for almost the whole
+panel, and as small as 3-4 for IWO and SOXL. R2dec below 0.3 on UVXY
+(0.181) and VXX (0.264) means the emittable size distribution carries less
+than a third of those symbols' size variance; note UVXY's ceiling is 0.276,
+so that one is the EDGES failing, not the representatives.
+
+DT buckets (16 levels: DT_ZERO + 14 log-spaced + DT_TAIL): ZERO dead
+buckets on ALL 13 symbols. Variance preserved on the 7 symbols with exact
+dthist (TRAIN 20191230, itch_tokenize --dthist added for this row): R2 on
+log dt 0.958 (IWM) to 0.992 (SOXL), against a per-bucket-conditional-mean
+ceiling of 0.989-0.998. Raw-scale R2 is 0.73-0.75 but is the wrong summary
+for a heavy-tailed inter-arrival distribution. THE DT QUANTIZER IS HEALTHY;
+the SIZE quantizer is the defective one. The other 6 symbols' exact dt was
+not collected - the machine hit 290 MiB of free disk mid-pass (see Step 4)
+and the decompressed day was deleted to protect it; occupancy and dead
+counts above are still all 13 symbols, from the token bins.
+
+REPORTED, NOT FIXED. A refit would rebuild the corpus; that is the user's
+call. Standing caveat from the 2026-07-31 architecture Decision applies
+unchanged: this is logged so the asymmetry can be REPORTED, not so a loss
+on a scored fact can be discounted.
