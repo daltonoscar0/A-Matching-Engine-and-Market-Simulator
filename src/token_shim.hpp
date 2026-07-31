@@ -37,6 +37,7 @@
 
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <vector>
 
 #include "adapter.hpp"
@@ -200,10 +201,33 @@ inline lob::Outcome step(lob::Adapter& a, const uint16_t t[5],
 // counted as one Unparseable and the stream advances one token (resync) -
 // a generative model CAN emit misaligned garbage and the loop must not
 // wedge. A truncated trailing tuple is likewise one Unparseable.
+// `on_tuple`, when set, fires after every counted tuple (resolved or not)
+// with the resolution and outcome - the instrumentation hook the
+// stationarity diagnostic (tools/sim_health) records from. For resync /
+// truncation pseudo-tuples it receives an empty Resolution with reject =
+// Unparseable.
+using TupleHook =
+    std::function<void(size_t idx, const Resolution&, const lob::Outcome&)>;
+
 inline void drive(lob::Adapter& a, const std::vector<uint16_t>& stream,
-                  const oftk::TickerBins& bins, Counts& c) {
+                  const oftk::TickerBins& bins, Counts& c,
+                  const TupleHook& on_tuple = {}) {
     size_t i = 0;
+    size_t idx = 0;
     const size_t n = stream.size();
+    auto reject_one = [&]() {
+        ++c.tuples;
+        ++c.rejects[size_t(lob::Reject::Unparseable)];
+        if (on_tuple) {
+            Resolution r;
+            r.reject = lob::Reject::Unparseable;
+            lob::Outcome o;
+            o.reject = lob::Reject::Unparseable;
+            on_tuple(idx++, r, o);
+        } else {
+            ++idx;
+        }
+    };
     while (i < n) {
         const uint16_t t = stream[i];
         if (t <= oftk::RESUME) {  // UNK..RESUME: specials, no action
@@ -212,18 +236,30 @@ inline void drive(lob::Adapter& a, const std::vector<uint16_t>& stream,
             continue;
         }
         if (t < oftk::TYPE_BASE || t >= oftk::SIDE_BASE) {
-            ++c.tuples;
-            ++c.rejects[size_t(lob::Reject::Unparseable)];
             ++c.resyncs;
+            reject_one();
             ++i;
             continue;
         }
         if (i + oftk::kEventTokens > n) {
-            ++c.tuples;
-            ++c.rejects[size_t(lob::Reject::Unparseable)];
+            reject_one();
             break;
         }
-        step(a, &stream[i], bins, c);
+        // step() re-resolves; resolve here once so the hook sees it.
+        Resolution r = resolve(&stream[i], bins, a.book());
+        ++c.tuples;
+        lob::Outcome o;
+        if (!r.ok) {
+            ++c.rejects[size_t(r.reject)];
+            o.reject = r.reject;
+        } else {
+            ++c.submitted;
+            o = a.submit(r.action);
+            if (o.applied()) ++c.applied;
+            else ++c.rejects[size_t(o.reject)];
+        }
+        if (on_tuple) on_tuple(idx, r, o);
+        ++idx;
         i += oftk::kEventTokens;
     }
 }

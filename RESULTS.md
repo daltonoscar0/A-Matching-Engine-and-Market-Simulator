@@ -378,3 +378,38 @@ caveat: this touches the DISTRIBUTIONAL SANITY CHECKS only; the two
 scored facts (flow-sign memory, vol-clustering persistence) do not
 depend on size resolution, and a loss on a scored fact is not explained
 by this row.
+
+## Generated-stream VIABILITY BAR (Step 2, 2026-07-31) - recorded BEFORE any model run
+
+The pilot showed the failure mode training does not automatically cure:
+a slight delete bias compounds over a long generation, drains the book,
+and every later tuple rejects UnknownReference - while the stylized
+facts need thousands of market orders from a book that is still alive.
+tools/sim_health drives a generated OFTK stream through the shim into
+the adapter and records book health over generation time (CSV per K
+tuples: open_orders, level counts, touch, spread, two-sidedness,
+cumulative rejects by category, collapsed signs).
+
+THE BAR, fixed now, before the diagnostic has been run against any
+model output: a generated stream is VIABLE for stylized-fact
+measurement iff
+  (V1) it produces >= 500 collapsed market-order signs - the project's
+       standing measurability threshold - using the same 1ms same-sign
+       collapse as everywhere else, on the stream's PSEUDO-CLOCK
+       (accumulated decoded DT bucket representatives; generated
+       streams carry no real timestamps - decision logged);
+  (V2) the book is two-sided at >= 90% of sampled checkpoints; and
+  (V3) open_orders never reaches 0 (dead book) before the 500th sign.
+Also reported, not part of the bar: open_orders DRIFT (OLS slope per 1k
+tuples) - a stream can pass while drifting toward collapse, and the
+drift says whether a longer generation survives. Signs are counted from
+applied actions with filled shares > 0 (Market or marketable Limit),
+sign = aggressor side.
+
+Known-bad check (run AFTER the bar above was recorded): the pilot
+checkpoint's sampled stream (out/tokens/pilot_sampled.tokens.bin) is
+NOT VIABLE on all three conditions - book DEAD at tuple 29 (the model
+deletes the seed orders almost immediately), 0 collapsed signs,
+two-sided at 0.0% of checkpoints, 96.2% UnknownReference. The
+diagnostic catches the known failure mode; that was the point of
+testing it on a known-bad stream. Series: out/tokens/pilot_health.csv.

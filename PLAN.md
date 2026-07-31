@@ -1237,3 +1237,18 @@ Resolved earlier 2026-07-30 (kept for the record):
   Session ran phases 1-8 with 7 phase commits + 1 review-fix commit; the
   adversarial review of the ingest (19 agents) confirmed 14 findings, all
   fixed and re-verified on real data. TEST never read. Gates green.
+- 2026-07-31 Step 2 (committed before Step 1's corpus commit - the
+  corpus build is still running in the background; diagnostic first per
+  "build BEFORE training"): tools/sim_health + a per-tuple hook on
+  shim::drive. Viability bar recorded in RESULTS.md BEFORE the tool
+  touched any model output (V1 >=500 collapsed signs on the pseudo-clock
+  of decoded DT reps; V2 two-sided >=90% of checkpoints; V3 book alive
+  through the 500th sign; drift reported, not part of the bar).
+  Known-bad check passes: the pilot stream FAILS viability (book dead
+  at tuple 29, 0 signs). Also this morning: the review-added aux-path
+  guard was refined (Step 0 commit) - it refused ANY 8-digit day token,
+  which blocked legitimate day-stamped artifact names and failed the
+  entire first corpus-build pass; the hazard is *.BX_ITCH_50 targets
+  and sealed-TEST tokens, which is now exactly what it refuses (both
+  refusals re-verified live, TRAIN/VAL-stamped artifacts allowed).
+  Gates green.
