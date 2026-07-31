@@ -237,3 +237,71 @@ condition on, i.e. via marginal statistics rather than memory. Even the
 best cell needs ~60x growth for lag 100. This is a measurement, not a
 proposal: the architecture decision (n_ctx, tokenization, or otherwise)
 is the user's; the pre-registration is NOT amended by this row.
+
+## BX bin refit + PRICE_OFF window re-measurement (Phase 5, 2026-07-30)
+
+Retraining decisions, measured on BX TRAIN (panel symbols; pooled fit over
+3 TRAIN days spanning regimes: 20190130, 20190530, 20191230; VXX on the
+latter two only - the old VXX series matured Jan 2019 and is absent from
+the 20190130 stock directory). Fit sample = the in-window expanded event
+stream the tokenizer emits (tools/itch_tokenize_fit, frac 1.0; the real
+train/eval split is by day). Evidence: out/tokens/manifest.json,
+out/tokens/phase5/ (per-symbol fit logs + 38 per-(symbol,day) PRICE_OFF
+histograms).
+
+SIZE edges (7 quantile edges, k/8): LOBSTER-SPY-2012 does NOT transfer.
+BX-SPY pooled: [7,30,100,101,102,200,500] vs LOBSTER [100,200,201,387,
+500,501,1000] - BX carries heavy sub-100 odd-lot mass LOBSTER SPY lacked.
+Per symbol the edges differ strongly (IWO [200..205,400]; TLT
+[100..103,240,800,1300]); a single-day fit also differs from the pooled
+fit (1-day SPY: [100..104,500,501]) - day mix matters. Round-lot
+discreteness makes several adjacent edges collapse to consecutive
+integers (the enforce_edge_invariants +1 bumps), so some buckets are
+1-share-wide and per-day occupancy is lumpy (e.g. IWO buckets 2-5 carry
+ZERO events on all 3 days; SOXL 20191230 puts 100% in 3 buckets).
+FINDING, not changed here: 8 per-ticker quantile buckets on a
+round-lot-quantized venue yield degenerate near-empty buckets; if bucket
+occupancy matters for training efficiency, the bin RULE (not the count)
+would need rethinking - that is a tokenizer-design decision, not a refit.
+
+DT edges (14 log-spaced, p0.1-p99.9 of nonzero gaps): BX is 1-2 orders of
+magnitude burstier/thinner than LOBSTER SPY 2012. Upper anchor 1.9-13.6
+SECONDS across the panel vs LOBSTER's 0.26s; lower anchors comparable
+(~200-260ns). dt_zero (shared-timestamp bursts incl. U-expansion add
+halves) spans 0.5-21% by symbol-day (SOXL ~20%). Refit was mandatory, as
+predicted by FORMAT_RECONCILIATION.
+
+PRICE_OFF window (-1..+10, single -1 bucket) re-measured on 8.03M
+in-window panel events:
+
+| sym | events | unk% | -1% | 0..+10% | >+10% | >+30% | max |
+|---|---|---|---|---|---|---|---|
+| IWM | 1033305 | 0.00 | 20.31 | 79.28 | 0.41 | 0.000 | 24 |
+| SPY | 1158926 | 0.00 | 18.02 | 80.54 | 1.44 | 0.002 | 32 |
+| XLK | 636870 | 0.00 | 10.60 | 89.37 | 0.03 | 0.000 | 17 |
+| QQQ | 890971 | 0.00 | 26.84 | 73.09 | 0.07 | 0.000 | 28 |
+| IWO | 552567 | 0.00 | 34.13 | 65.66 | 0.21 | 0.000 | 23 |
+| UVXY | 499461 | 0.00 | 27.07 | 72.86 | 0.07 | 0.024 | 39 |
+| SOXL | 494330 | 0.00 | 24.62 | 75.30 | 0.08 | 0.000 | 28 |
+| TLT | 467654 | 0.00 | 9.22 | 90.59 | 0.19 | 0.000 | 17 |
+| IJH | 586035 | 0.00 | 24.42 | 74.79 | 0.79 | 0.000 | 22 |
+| XLE | 539311 | 0.00 | 13.42 | 86.55 | 0.02 | 0.000 | 15 |
+| XLV | 461498 | 0.00 | 14.62 | 85.35 | 0.03 | 0.000 | 15 |
+| IWN | 391287 | 0.00 | 35.59 | 64.39 | 0.01 | 0.000 | 15 |
+| VXX | 315893 | 0.00 | 12.07 | 87.91 | 0.02 | 0.000 | 26 |
+| ALL | 8028108 | 0.00 | 20.86 | 78.78 | 0.37 | 0.002 | - |
+
+Verdict, two-sided: (1) the WINDOW BOUNDS survive - 99.63% of events land
+in [-1,+10] pooled (worst symbol 98.56%), UNK is 0%, and mass beyond +30
+is negligible, so no window widening is demanded. (2) the "-1 is a single
+bucket because inside-spread placement is rare/one-tick" assumption,
+measured on LOBSTER where it held, is INVERTED on BX: 20.9% of all panel
+events (9-36% by symbol) price INSIDE the spread, because BX spreads sit
+several ticks wide, leaving room the tokenizer collapses into one
+undifferentiated bucket. One fifth of the event mass loses its
+where-inside-the-spread placement. FINDING reported, per the phase rule -
+NOT changed silently: splitting -1 into depth-graded inside buckets is a
+vocab change (new tuple semantics + retrain) and is the user's call. The
+LM can be trained on the current vocab; the cost is expressiveness on
+exactly the venue-idiosyncratic feature (wide spreads) the claim scope
+already flags.

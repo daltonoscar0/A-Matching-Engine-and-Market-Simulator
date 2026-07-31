@@ -1098,3 +1098,13 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   other tickers' frozen bins; token/pxhist writes are flush-checked; the
   unimplemented --max-frames flag doc removed; HALT-as-DT-gap divergence
   from tape documented in the header. Gates green.
+- 2026-07-30 Phase 5: SIZE/DT bins refit on BX TRAIN (13-symbol panel,
+  3 pooled TRAIN days; VXX 2 days - old series matured pre-20190130) and
+  PRICE_OFF window re-measured on 8.03M panel events (RESULTS.md row).
+  LOBSTER bins do not transfer (BX SPY carries sub-100 odd-lot mass;
+  DT p99.9 gaps are seconds, not 0.26s). Window bounds survive (99.63%
+  in [-1,+10], UNK 0%); the single -1 bucket does NOT match BX reality -
+  20.9% of events price inside the (wide) spread. Two findings reported,
+  nothing changed silently: degenerate 1-share size buckets on a
+  round-lot venue; -1 bucket granularity (vocab change = user's call).
+  Frozen bins in out/tokens/manifest.json. Gates green.
