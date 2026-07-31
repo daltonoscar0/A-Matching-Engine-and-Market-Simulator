@@ -1005,6 +1005,60 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   it needs disk headroom - not a different venue. Per the instruction, the
   run was NOT restarted a fourth time.
 
+- 2026-07-31 (Step 7, SHIM REPAIR - Blocked-on-you item 5 decided, option
+  (b), Claude's call under an explicit "finish it") THE
+  NEAREST-ACHIEVABLE-INDEX RULE. An ADD whose PRICE_OFF names an occupied
+  level the book does not have now OPENS a level one tick beyond the
+  deepest one (index L, the nearest the book can offer) instead of
+  rejecting; PX_TAIL anchors at level min(10, L-1), so behaviour is
+  UNCHANGED whenever >= 11 levels exist; a PX_TAIL CANCEL takes the
+  deepest occupied level. UNK cancels, -1 cancels and ordinary
+  absent-level cancels still reject. Shim-only: no vocab change, no
+  manifest bump, no bin refit, no corpus rebuild, no retrain.
+  WHY (b) AND NOT (c): (c) is the correct fix for the residual interior
+  ambiguity but costs a corpus rebuild, and rebuilding requires
+  decompressing days on a volume with ~1 GiB free - the exact condition
+  that has SIGKILLed the trainer three times. (b) removes the mechanism
+  that was actually killing streams (the depth ratchet) at zero data cost.
+  VALIDATED by the control that condemned the old harness: the real token
+  stream, warm-started, is VIABLE on ALL SIX SPY TRAIN days (99.65-99.98%
+  applied, 2,034-5,623 signs, V1+V2+V3 pass). It was dead at tuple 3 cold
+  and tuple 8,265 warm before this.
+  A WRONG TURN ON THE RECORD, because the measurement is the point: the
+  first cancel rule was FULLY symmetric with the add rule, on the
+  plausible argument that being generous to adds and strict to cancels
+  must inflate depth - and it does (+4,304 orders/day, drift +4.84 per
+  1k). Measured, full symmetry COLLAPSES the book (applied 99.27% ->
+  11.74%, dead at tuple 108,540), because index-8..10 cancels then hammer
+  the bottom levels. Scoping relocation to PX_TAIL alone keeps viability
+  AND fixes the inflation (99.90% applied, book end 506 orders, drift
+  +0.62). The boring explanation beat the elegant one, again.
+  TWO TESTS WERE REWRITTEN, logged here as deliberate behaviour changes
+  rather than edits to green (CLAUDE.md requires this): the old cases
+  pinned "deep-index add rejects" and "any absent-level cancel relocates",
+  which are precisely the behaviours this change alters. They now pin the
+  new invariants, including an ANTI-RATCHET property test (deep-index adds
+  must REBUILD depth) that the old shim would fail. The ctest gate caught
+  the second rewrite before it shipped, which is what the gate is for.
+  COSTS, stated: PRICE_OFF decoding changed, so every viability number
+  from before this Decision is on the OLD decoder and is not comparable to
+  numbers after it - the Step 1/2/5 rows stand as measurements of the
+  harness as it then was, and are not retracted. The interior ambiguity
+  (9.40% of real SPY adds open a level between two occupied ones) is NOT
+  fixed and cannot be without a vocabulary change; item 5 therefore
+  survives in reduced form as item 2's companion. Nothing in the
+  pre-registration is touched - no scored fact, threshold, measurability
+  rule, seed count or failure condition.
+
+- 2026-07-31 (trainer resume) train_corpus.py --resume: the checkpoint now
+  carries optimizer, scheduler and sampler-RNG state, so a kill costs one
+  checkpoint interval instead of the whole run. Added because the run has
+  been SIGKILLed three times and the diagnosis (memory pressure, not a
+  stop signal) says a fourth is possible whatever we do. The supervisor
+  that drives it caps attempts at 6, so it can never become an infinite
+  restart loop, and each attempt logs free disk so a resource kill is
+  visible in the log rather than inferred.
+
 ## Blocked on you
 Updated 2026-07-31. Each item states specifically what it needs from you.
 1. ARCHITECTURE vs THE CONTEXT GATE - RESOLVED 2026-07-31 by the user:
@@ -1023,13 +1077,20 @@ Updated 2026-07-31. Each item states specifically what it needs from you.
    which is the trainer holding the 88.4M-token corpus. The same
    conditions fit both earlier stops (each landed during heavy
    corpus-build ingests on a near-full disk). Per your instruction it
-   was NOT restarted a fourth time. Needs from you: disk headroom (the
-   volume is at 199 of 228 GiB with ~1 GiB free) and an agreement that
-   nothing else heavy runs alongside - not a different venue. NOTE a
-   real gap while you decide: train_corpus.py writes checkpoints but
-   CANNOT RESUME from one, so a fourth kill costs everything again;
-   adding resume is a small change I have not made because it was not
-   in scope. Say the word and it lands before the next attempt.
+   was NOT restarted a fourth time then. UPDATED later the same day, and
+   this is the actionable part: the pressure is NOT mainly this
+   project's ingests. A process listing during the fourth attempt caught
+   two UNRELATED heavy jobs of yours saturating the machine -
+   ~/code/ticker scripts/score_novelty.py (98.7% CPU, 798 MB) and
+   python -m edge.features.build (98.4% CPU, 1.64 GB and climbing).
+   Measured effect: the identical trainer ran at 6.9 steps/s at 11:00
+   and 1.2 steps/s at 15:18, so the 32,000-step budget run goes from ~77
+   minutes to ~7.4 hours. NEEDS FROM YOU: pause those two while a
+   training or sampling run is up, and free disk (the volume is at 199
+   of 228 GiB). That is worth ~6x on every remaining run here. Resume
+   support now exists (train_corpus.py --resume carries optimizer,
+   scheduler and RNG state), and the supervisor caps restarts at 6, so a
+   kill now costs one checkpoint interval rather than the whole run.
 2. INSIDE-SPREAD BUCKET GRANULARITY (does not block; distorts). 20.9% of
    BX panel events price inside the spread and all land in the single -1
    bucket (RESULTS.md Phase 5). Needs from you: keep the 52-id vocab as
@@ -1054,9 +1115,19 @@ Updated 2026-07-31. Each item states specifically what it needs from you.
    whether 90 minutes is also the budget for the real model or whether
    it gets longer (200k steps = ~5.6h bench-rate, ~8.7h realized-rate).
 
-5. NEW, AND THE MOST CONSEQUENTIAL ONE - THE SHIM'S PRICE_OFF INVERSE IS
-   STRUCTURALLY WRONG, and it caps what ANY model can do through this
-   harness. Measured, not suspected (RESULTS.md Step 2 + the Decision):
+5. THE SHIM'S PRICE_OFF INVERSE - LARGELY RESOLVED 2026-07-31 by Claude
+   under an explicit "finish it": option (b) implemented, and the real
+   stream is now VIABLE on all 6 TRAIN days (see the Step 7 Decision).
+   WHAT SURVIVES for you, and it is smaller: the INTERIOR AMBIGUITY. The
+   token cannot distinguish "join occupied level k" from "open a new level
+   just better than level k", and 9.40% of real SPY adds are the latter,
+   so they still join the level below. Fixing it needs a vocabulary change
+   and therefore a refit + corpus rebuild + retrain - the same bill as
+   item 2, which is why the two should be decided together. It no longer
+   BLOCKS anything: it distorts add placement, not book survival, and it
+   does not touch either scored fact. Original text of the finding kept
+   below for the record.
+   Measured, not suspected (RESULTS.md Step 2 + the Decision):
    level_index records the COUNT of strictly-better occupied levels, so
    "join occupied level k" and "open a NEW level just better than level
    k" are the SAME token, and the inverse always joins. 9.40% of real

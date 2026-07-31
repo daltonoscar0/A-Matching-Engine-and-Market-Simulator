@@ -690,14 +690,28 @@ Realized rate 6.9 steps/s, so 32,000 steps was on track for ~77 minutes.
 
 THE CAUSE IS A RESOURCE PROBLEM, NOT A STOP SIGNAL. Machine state at the
 kill: 16 GiB RAM, 3.55 of 5 GiB swap in use, and 379 MiB of FREE DISK - and
-the swap file lives on that volume, so macOS could not grow swap. Running
-concurrently: a warm_book / itch_tokenize ingest, each of which slurps an
-863 MB day file plus a full BookSet, for multi-GB RSS. Memory pressure with
-nowhere to page out, and jetsam takes the largest resident process - which
-is the trainer holding the 88.4M-token corpus. The same conditions fit both
-earlier stops: each landed during heavy corpus-build ingests on a near-full
-disk. Free disk fell to 290 MiB later in this session with no training
-running at all, which is what the ingests alone do to it.
+the swap file lives on that volume, so macOS could not grow swap. Memory
+pressure with nowhere to page out, and jetsam takes the largest resident
+process - which is the trainer holding the 88.4M-token corpus.
+
+CORRECTED AND COMPLETED 2026-07-31, later the same day: the first version
+of this row blamed the pressure on this project's own ITCH ingests. They
+contribute, but they are not the whole story and were not running for most
+of it. A process listing taken during the FOURTH attempt found two
+UNRELATED heavy jobs of the user's own, on other projects, saturating the
+machine:
+  - ~/code/ticker scripts/score_novelty.py --form 10-K : 98.7% CPU,
+    798 MB RSS, running 25+ minutes;
+  - python -m edge.features.build --frames data/frames : 98.4% CPU and
+    1.64 GB RSS within 30 seconds of starting, still growing.
+Effect on this project, measured rather than inferred: the same trainer,
+same corpus, same device, same code ran at 6.9 steps/s at 11:00 and at
+1.2 steps/s at 15:18 - a 5.7x slowdown, which turns the 32,000-step budget
+run from ~77 minutes into ~7.4 hours. That is contention, not a
+regression. It is also the most likely trigger for all three SIGKILLs.
+CONSEQUENCE, and it is the actionable one: the trainer needs the machine
+to ITSELF. Pausing those two jobs is worth roughly a 6x wall-clock
+speedup on every remaining training and sampling run in this project.
 
 Acted on rather than argued: the ingest pass was cut short at 7 of 13
 symbols and the decompressed day deleted at 290 MiB, restoring 1.1 GiB.
