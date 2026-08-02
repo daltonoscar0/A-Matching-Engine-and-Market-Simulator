@@ -68,6 +68,53 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
 - [ ] Almgren-Chriss baseline; RL or policy-gradient agent inside the sim
 
 ## Status
+- Read this cold (2026-08-02, session ended by the user to resume tomorrow).
+  SUPERSEDES the 2026-07-31 status below, which is kept for the record.
+- THE BUDGET TRAINING RUN IS DONE. 32,000 steps, VAL held-out 0.9249,
+  train-sample 0.9045, gap +0.0204 (out/tokens/run32k/budget32k_v2.pt).
+  The fourth kill was NOT memory pressure: train_corpus.py and sample.py
+  imported `tape` from a per-session /private/tmp scratchpad that is wiped
+  between sessions. Repointed at ~/tape and verified identical (strict
+  state_dict load + exact corpus counts). The final checkpoint carries NO
+  optimizer state, so 32k is terminal - extending means starting over.
+- THE HEADLINE TABLE WAS BLOCKED ON A MISSING TOOL, now built. tools/lm_sim
+  turns a token stream into an ITCH file so tools/stylized can score the LM
+  the same way real and null were scored; tools/ablate isolates which
+  quantization does what. Both are committed (c118506) with all three gates
+  green.
+- WHAT THE PIPELINE DOES TO THE SCORED FACTS, measured before any model
+  output existed (RESULTS.md Steps 8 and 9): flow-sign memory SURVIVES
+  (-0.881 -> -0.917), volatility clustering DOES NOT (tick ACF 0.503 ->
+  -0.000). The ablation control reproduces the real column to 3 decimals,
+  and `pxadd` - the vocabulary's loss alone - leaves BOTH scored facts
+  standing, so the 52-id vocab is exonerated and the keep-it decision now
+  rests on evidence. Leading hypothesis for the real cause, UNTESTED: the
+  shim has no order identity, so a cancel takes a level's FIFO head rather
+  than the order the real stream cancelled.
+- WHERE IT STOPPED: sampling from the 32k checkpoint, killed by the user at
+  100,000 of 500,000 tokens. sample.py writes only at the END, so nothing
+  was kept - a restart starts over. Throughput 33 steps/s => ~4.2 h for
+  500k x 8 streams. RESTART COMMAND:
+    caffeinate -i /opt/anaconda3/bin/python3 out/tokens/sample.py \
+      --ckpt out/tokens/run32k/budget32k_v2.pt \
+      --out-prefix out/tokens/sample32k/T1.0_k0 --n-tokens 500000 \
+      --batch 8 --temperature 1.0 --top-k 0 --seed 0 --ticker SPY
+- NEXT, in order, once those tokens exist:
+  1. Viability warm-started (build/sim_health --warm-start
+     out/tokens/warm/SPY_20190730_0930.book) - the FIRST viability verdict
+     on the repaired decoder; every earlier model row is on the old one.
+  2. The LM column: build/lm_sim on the sampled tokens -> build/stylized,
+     then the real vs LM vs null table. Score on flow-sign memory ONLY;
+     report volatility clustering as a pipeline ceiling, not a model result.
+  3. The sealed TEST run on {20181228, 20200130} - AUTHORISED by the user
+     2026-08-02, but LAST, and it goes back to them if the stream is not
+     viable (see the Decision).
+- TWO THINGS FOR THE USER, both raised and neither actioned: the LM column
+  will be ~half day-scale (100k tuples vs a real day's 213k) unless the
+  sampler gets KV caching (~5-20x, but it edits ~/tape and needs a
+  sample-identity check); and out/ is GITIGNORED, so train_corpus.py and
+  sample.py - today's fix included - are not under version control, which
+  is how the scratchpad-path bomb survived.
 - Read this cold (2026-07-31, second session of the day). Everything up to
   the model is DONE: engine, measurement apparatus, null column, ingest
   (round-trip tested), shim, stationarity diagnostic with a pre-registered
