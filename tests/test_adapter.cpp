@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "../src/adapter.hpp"
+#include "../src/bookset.hpp"
 
 using namespace lob;
 
@@ -233,4 +234,72 @@ TEST_CASE("the loop runs 50k generated steps with zero invariant violations",
     REQUIRE(ad.book().audit().empty());
     REQUIRE(ad.applied() + ad.rejected() == uint64_t(N));
     REQUIRE(ad.applied() > 0);
+}
+
+// ---------------------------------------------------------------- journal
+// 2026-08-02. Phase 3's LM column is produced by replaying the adapter's ITCH
+// journal through tools/stylized, so the journal must be RECONSTRUCTION-CLOSED:
+// replaying it into a fresh book must reproduce the adapter's book exactly,
+// with zero rejects and exact share conservation. If this property is wrong
+// the LM column is measuring a book nobody ever traded, so it is pinned here
+// over a long randomized run rather than on a couple of hand cases.
+TEST_CASE("adapter journal replays to an identical book", "[adapter]") {
+    AdapterConfig cfg;
+    Adapter ad(cfg);
+    itch::Stock stock = {'L','M','S','I','M',' ',' ',' '};
+    ad.journal_enable(7, stock);
+
+    std::mt19937_64 g(20260802);
+    std::uniform_int_distribution<int> kind(0, 9);
+    std::uniform_int_distribution<uint32_t> sz(1, 500);
+    std::uniform_int_distribution<uint32_t> px(999'000, 1'001'000);
+
+    // Seed both sides so marketable flow has something to hit.
+    REQUIRE(ad.submit({ActionKind::Limit, Side::Buy,  999'900, 100}).applied());
+    REQUIRE(ad.submit({ActionKind::Limit, Side::Sell, 1'000'100, 100}).applied());
+
+    const int N = 20000;
+    uint64_t clock_ns = 34'200'000'000'000ull;  // 09:30:00
+    for (int i = 0; i < N; ++i) {
+        clock_ns += uint64_t(g() % 1'000'000);
+        ad.journal_time(clock_ns);
+        EmittedAction a;
+        a.side = (g() & 1) ? Side::Buy : Side::Sell;
+        int k = kind(g);
+        if (k < 6) {                                      // resting or crossing
+            a.kind = ActionKind::Limit;
+            a.price = px(g);
+            a.shares = sz(g);
+        } else if (k < 8) {                               // market
+            a.kind = ActionKind::Market;
+            a.shares = sz(g);
+        } else {                                          // cancel a real level
+            BookView v = ad.state();
+            const auto& lvls = a.side == Side::Buy ? v.bids : v.asks;
+            a.kind = ActionKind::Cancel;
+            a.price = lvls.empty() ? 12345
+                                   : lvls[size_t(g()) % lvls.size()].price;
+            a.shares = 1;
+        }
+        ad.submit(a);
+    }
+    REQUIRE(ad.applied() > 0);
+    REQUIRE(ad.book().audit().empty());
+    REQUIRE(!ad.journal().empty());
+
+    // Replay the journal into a fresh book through the validated feed path.
+    BookSet set;
+    for (const itch::Message& m : ad.journal())
+        REQUIRE(set.apply(m) == Result::Ok);
+
+    size_t books = 0;
+    set.for_each_book([&](uint16_t locate, Book& bk) {
+        ++books;
+        REQUIRE(locate == 7);
+        REQUIRE(bk.audit().empty());
+        REQUIRE(bk.shares_added() ==
+                bk.shares_executed() + bk.shares_canceled() + bk.shares_resting());
+        REQUIRE(fingerprint(bk) == fingerprint(ad.book()));
+    });
+    REQUIRE(books == 1);
 }

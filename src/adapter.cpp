@@ -110,11 +110,22 @@ Outcome Adapter::submit(const EmittedAction& a) {
             if (book_.remove(cancel_ref) != Result::Ok)
                 return reject(Reject::InvariantViolation);
             out.canceled = sh;
+            if (journal_on_) {
+                // Full removal of the FIFO head -> 'D', not 'X': the adapter
+                // cancels whole resting orders, never a partial quantity.
+                itch::OrderDelete d;
+                d.h.stock_locate = journal_locate_;
+                d.h.timestamp    = journal_ts_;
+                d.order_ref      = cancel_ref;
+                journal_.push_back(d);
+            }
             break;
         }
         case ActionKind::Market: {
             MatchRequest req;
-            req.timestamp = 0;
+            req.timestamp = journal_ts_;
+            req.locate    = journal_locate_;
+            req.stock     = journal_stock_;
             req.ref       = next_ref_++;
             req.side      = a.side;
             req.shares    = a.shares;
@@ -123,6 +134,8 @@ Outcome Adapter::submit(const EmittedAction& a) {
             MatchOutcome mo = match_submit(book_, req, match_seq_, fills_, emit_);
             if (mo.result != Result::Ok) { --next_ref_; return reject(Reject::InvariantViolation); }
             out.filled = mo.filled;
+            if (journal_on_)
+                journal_.insert(journal_.end(), emit_.begin(), emit_.end());
             break;
         }
         case ActionKind::Limit: {
@@ -131,7 +144,9 @@ Outcome Adapter::submit(const EmittedAction& a) {
                                                           : a.price <= opp);
             if (marketable) {
                 MatchRequest req;
-                req.timestamp = 0;
+                req.timestamp = journal_ts_;
+                req.locate    = journal_locate_;
+                req.stock     = journal_stock_;
                 req.ref       = next_ref_++;
                 req.side      = a.side;
                 req.shares    = a.shares;
@@ -142,6 +157,10 @@ Outcome Adapter::submit(const EmittedAction& a) {
                 if (mo.result != Result::Ok) { --next_ref_; return reject(Reject::InvariantViolation); }
                 out.filled = mo.filled;
                 out.rested = mo.rested;
+                // match_submit already emits the 'A' for any resting
+                // remainder, so this path must NOT add one itself.
+                if (journal_on_)
+                    journal_.insert(journal_.end(), emit_.begin(), emit_.end());
             } else {
                 uint64_t ref = next_ref_++;
                 if (book_.add(ref, a.side, a.shares, a.price) != Result::Ok) {
@@ -149,6 +168,17 @@ Outcome Adapter::submit(const EmittedAction& a) {
                     return reject(Reject::InvariantViolation);
                 }
                 out.rested = a.shares;
+                if (journal_on_) {
+                    itch::AddOrder ad;
+                    ad.h.stock_locate = journal_locate_;
+                    ad.h.timestamp    = journal_ts_;
+                    ad.order_ref      = ref;
+                    ad.side           = a.side == Side::Buy ? 'B' : 'S';
+                    ad.shares         = a.shares;
+                    ad.stock          = journal_stock_;
+                    ad.price          = a.price;
+                    journal_.push_back(ad);
+                }
             }
             break;
         }

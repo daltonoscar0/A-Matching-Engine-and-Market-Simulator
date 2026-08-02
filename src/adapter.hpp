@@ -119,6 +119,28 @@ public:
 
     const Book& book() const { return book_; }
     Book&       book()       { return book_; }
+
+    // ---- optional ITCH journal (2026-08-02) --------------------------------
+    // Phase 3's LM column needs the generated stream as an ITCH file, because
+    // tools/stylized replays ITCH - that is how the real and null columns were
+    // built, and the comparison is only honest if all three go through the
+    // SAME pipeline. The messages already exist on the marketable path
+    // (match_submit emits them, reconstruction-closed and fuzz-verified) but
+    // were discarded; resting adds and cancels emit nothing. This records all
+    // three, so the journal is the engine's own account of what it did rather
+    // than a reconstruction guessing at order refs.
+    // OFF by default: every existing caller and the adapter bench are
+    // unaffected, and nothing is allocated unless a tool asks for it.
+    void journal_enable(uint16_t locate, const itch::Stock& stock) {
+        journal_on_ = true;
+        journal_locate_ = locate;
+        journal_stock_ = stock;
+    }
+    // Timestamp stamped on messages from the next submit onward. The caller
+    // owns the clock (tools/lm_sim advances it by the tuple's DT token).
+    void journal_time(uint64_t ns) { journal_ts_ = ns; }
+    const std::vector<itch::Message>& journal() const { return journal_; }
+    void journal_clear() { journal_.clear(); }
     uint64_t applied()  const { return applied_; }
     uint64_t rejected() const { return total_rejected_; }
     uint64_t reject_count(Reject r) const {
@@ -134,6 +156,11 @@ private:
     std::mt19937_64 rng_;
     uint64_t next_ref_  = 1;
     uint64_t match_seq_ = 0;
+    bool     journal_on_ = false;
+    uint16_t journal_locate_ = 0;
+    itch::Stock journal_stock_ = {' ',' ',' ',' ',' ',' ',' ',' '};
+    uint64_t journal_ts_ = 0;
+    std::vector<itch::Message> journal_;
     std::vector<Fill>          fills_;   // reused scratch
     std::vector<itch::Message> emit_;    // reused scratch (unused output)
     uint64_t applied_        = 0;

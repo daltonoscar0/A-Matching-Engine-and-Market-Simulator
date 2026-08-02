@@ -838,3 +838,120 @@ so those still join the level below. Nothing in the pre-registration is
 touched - no scored fact, threshold, measurability rule, seed count or
 failure condition. This is a decoder change, in the same category as the
 warm start.
+
+## Step 8 (2026-08-02): the LM column exists - and the pipeline preserves ONE of the two scored facts
+
+Phase 3's LM column needs the generated stream as an ITCH file, because
+tools/stylized replays ITCH: that is how the real column (a real BX day) and
+the null column (cst_sim's emitted ITCH) were both built. Nothing on the LM
+side wrote one - shim_drive and sim_health only MEASURE token streams - so
+tools/lm_sim was written: tokens -> shim -> adapter -> framed ITCH, prefixed
+with an 'R' directory frame, self-verified by replay (0 rejects, exact
+conservation, book identical to the adapter's). The messages are the engine's
+own account of what it did, via a new opt-in Adapter ITCH journal, not a
+reconstruction guessing at order refs. Warm-book orders are journalled as
+opening adds, since warm_book bypasses the adapter.
+
+THE CONTROL THAT MATTERS, and it was run BEFORE any model output existed:
+feed the REAL token stream through the LM pipeline and compare against the
+REAL ITCH day, same symbol, same day. Any gap is the pipeline, not a model.
+
+SPY 20190730 (VAL day; 213,754 tuples, 213,261 applied, 0 adapter rejects):
+
+| stylized fact | real ITCH day | real tokens -> pipeline | verdict |
+|---|---|---|---|
+| Flow-sign log-log slope, lags 1-100 | -0.881 | -0.917 | PRESERVED |
+| Flow-sign count | 1,866 | 2,037 | PRESERVED |
+| Volatility clustering, tick ACF(\|r\|) lag-1 | 0.503 | -0.000 | DESTROYED |
+| Volatility clustering, 1s ACF(\|r\|) lag-1 | 0.166 | 0.001 | DESTROYED |
+| Bounce, ACF(r) event lag-1 | -0.218 | -0.000 | DESTROYED |
+| Fat tails, event kurtosis | 102.7 | 104,939.5 | INFLATED ~1000x |
+| Fat tails, 1s kurtosis | 17.2 | 11,562.1 | INFLATED ~670x |
+
+SPY 20191230 (TRAIN day; 595,169 tuples, 594,578 applied, 0 adapter rejects)
+reproduces the destruction and shows the sign slope is day-variable:
+tick ACF(|r|) lag-1 = 0.000, 1s = 0.006, ACF(r) event = -0.021, event
+kurtosis = 266,968, sign slope -0.343 on 4,905 signs.
+
+WHAT THIS MEANS FOR THE HEADLINE TABLE. Phase 3 pre-registered TWO
+discriminating facts (RESULTS.md null column): flow-sign memory and
+volatility clustering. Only the first survives the LM pipeline. A zero for
+the LM on volatility clustering would measure the tokenizer and shim, not the
+model - the same harness-vs-model confusion that the cold-start control and
+the PRICE_OFF ceiling already cost this project twice. The LM column can be
+honestly scored on flow-sign memory; on volatility clustering it cannot, and
+the pipeline's own value (~0.000 against the null's 0.046 and the real 0.120
+in tick time) is the ceiling to report.
+
+THE BORING EXPLANATION, offered as a hypothesis and NOT yet isolated. The
+tokenizer preserves the SIDE sequence exactly - a sign is a buy/sell label
+and survives quantization - which is why flow-sign memory passes through
+intact. It does NOT preserve the PRICE process: PRICE_OFF cannot express an
+interior level (9.40% of real SPY adds) and collapses 20.9% of inside-spread
+events into one bucket, and DT is bucketed (the reconstructed day spans
+12,669 s against a real 23,400 s). Every destroyed fact above is a MID-PRICE
+fact and every preserved one is a SIGN fact, which fits. Not established:
+which of vocab, shim, or DT quantization dominates. Separating them needs an
+ablation, not an argument.
+
+CORRECTION TO THE 2026-08-02 PRICE_OFF RESOLUTION DECISION. That entry says
+the surviving vocab limitations "do not touch either scored fact". Measured
+here, that is WRONG: one of the two scored facts does not survive the
+pipeline those limitations are part of. The decision was taken on my framing,
+so the framing is corrected here rather than quietly. Whether it changes the
+decision is the user's call - see PLAN.md Blocked on you.
+
+## Step 9 (2026-08-02): ablation - the VOCABULARY IS NOT what destroys volatility clustering
+
+Step 8 measured the end-to-end damage; it did not say which stage caused it,
+and the vocab decision hung on that. tools/ablate replays the REAL day's exact
+event stream with ONE quantization applied at a time. SPY 20190730, VAL day.
+
+THE CONTROL PASSES, so the rest is readable: mode `none` (exact price, size,
+timestamp) reproduces the real ITCH column to 3 decimals - slope -0.881 vs
+-0.881, tick ACF(|r|) 0.503 vs 0.503, 1s ACF(|r|) 0.166 vs 0.166, kurt 1s/10s/
+60s 17.2/6.5/3.9 vs 17.2/6.5/3.9 - with 0 skipped, 0 clamped, 0 prices moved.
+
+| mode | kurt event | tick ACF(\|r\|) | 1s ACF(\|r\|) | sign slope | n signs | skipped |
+|---|---|---|---|---|---|---|
+| none (control) | 107.0 | 0.503 | 0.166 | -0.881 | 1,866 | 0 |
+| dt | 106.4 | 0.480 | 0.388 | -0.474 | 1,064 | 0 |
+| size | 4,196.0 | 0.508 | 0.256 | -0.463 | 1,042 | 119,291 |
+| pxadd | 595.2 | 0.462 | 0.311 | -0.881 | 1,866 | 0 |
+| all | nan | nan | nan | -0.358 | 713 | 27,058 |
+| (Step 8 full LM pipeline) | 104,939.5 | -0.000 | 0.001 | -0.917 | 2,037 | - |
+
+THE ANSWER TO THE QUESTION THAT WAS ASKED. `pxadd` is the vocabulary's loss in
+isolation: 72,102 add prices moved to the PRICE_OFF-decoded level, everything
+else exact. It inflates fat tails ~6x (kurt event 107 -> 595) and it leaves
+BOTH scored facts standing - tick ACF(|r|) 0.462 vs the control's 0.503, and
+the flow-sign slope is EXACTLY unchanged at -0.881 on an unchanged 1,866
+signs. PRICE_OFF resolution is therefore NOT the mechanism that flattened
+clustering to zero, and a vocab rebuild would not recover it. On this
+evidence the 2026-08-02 decision to keep the 52-id vocab stands, and the
+Step 8 correction is itself corrected: the vocab limitations do inflate a
+SANITY-CHECK fact (fat tails), not a scored one.
+
+WHAT IS NOT ESTABLISHED, stated so the table is not over-read:
+  - `size` skipped 119,291 of 273,078 messages (43%): bucket-representative
+    sizes leave later cancels/executes with no resolvable quantity. Its row is
+    NOT interpretable as "size quantization does X" and is printed only
+    because hiding a 43% skip rate would be worse.
+  - `all` is degenerate (zero-return fraction 100.0%, statistics nan) and does
+    NOT reproduce the Step 8 pipeline row, so the modes do not compose. The
+    ablation isolates single stages; it does not model their interaction.
+  - `dt` is clean (0 skipped) and costs the flow-sign slope -0.881 -> -0.474
+    with the sign count nearly halved, because the sign ACF collapses events
+    in a 1 ms window and bucketed dt changes which events share a window. In
+    the actual pipeline the slope survived (-0.917), so this is a real
+    sensitivity that did not bite there - worth remembering before trusting a
+    slope measured on a stream with a distorted clock.
+
+THE LEADING HYPOTHESIS FOR THE REAL CAUSE, explicitly UNTESTED. Every ablation
+mode above keeps EXACT ORDER REFS; only the generation path does not. In
+lm_sim the shim has no order identity at all - a cancel resolves to the FIFO
+head of a named level, not to the order the real stream cancelled. That is the
+one structural difference between the clean modes (clustering intact) and the
+full pipeline (clustering zero), and it is not a vocabulary property, so no
+rebuild addresses it. Testing it needs a ref-free ablation mode, not an
+argument.

@@ -1059,6 +1059,78 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   restart loop, and each attempt logs free disk so a resource kill is
   visible in the log rather than inferred.
 
+- 2026-08-02 PRICE_OFF RESOLUTION - KEEP THE 52-ID VOCAB (blocked-on-you
+  items 2 and 5, decided TOGETHER by the user as recommended, since both
+  are about PRICE_OFF resolution and one rebuild would have served both).
+  Option (c) - the tokenizer change - is DECLINED. No vocab change, no
+  manifest bump, no bin refit, no corpus rebuild, no retrain. The 88.4M
+  corpus and the in-flight checkpoint stay valid.
+  WHAT THIS BUYS: the shim repair (Step 7) already removed the mechanism
+  that killed books, so what item 5 still carries is DISTORTION, not a
+  survival bug.
+  THE "does not touch either scored fact" CLAIM WAS CHALLENGED AND THEN
+  UPHELD, by measurement both times. RESULTS.md Step 8 found the pipeline
+  destroys volatility clustering (a scored fact) and I flagged the claim as
+  wrong. The Step 9 ablation then isolated the vocabulary's own
+  contribution: `pxadd` moves 72,102 add prices to the PRICE_OFF-decoded
+  level with everything else exact, and BOTH scored facts survive it - tick
+  ACF(|r|) 0.462 vs a 0.503 control, flow-sign slope EXACTLY unchanged at
+  -0.881. What the vocabulary costs is a ~6x inflation of fat tails, which
+  the null column already demoted to a sanity check. So the claim stands as
+  originally written, now on evidence rather than on my framing, and the
+  destruction of clustering belongs to something else (leading hypothesis:
+  the shim's ref-free cancel resolution - untested).
+  WHAT IT COSTS, and both of these are now PERMANENT LIMITATIONS of the
+  claim rather than open questions: (1) 9.40% of real SPY adds open a new
+  interior price level, the token cannot say so, and those adds join the
+  level below instead; (2) 20.9% of BX panel events price inside the
+  spread and all collapse into the single -1 bucket, one tick of a 7-tick
+  BX spread. Both are MEASURED, both get stated in the writeup as named
+  limitations with these numbers attached, and neither is retracted or
+  discounted later. The honest claim shrinks accordingly: add PLACEMENT
+  inside and just-inside the spread is coarser than BX reality, and no
+  result here should be read as evidence about fine-grained placement.
+
+- 2026-08-02 THE TAPE IMPORT PATH WAS A TIME BOMB, and it went off. Both
+  train_corpus.py and sample.py imported the `tape` package from a
+  PER-SESSION scratchpad path under /private/tmp/claude-501/<session-uuid>/.
+  That directory is wiped between sessions, so the resume died instantly
+  on ModuleNotFoundError - nothing to do with memory pressure, and it
+  would have broken EVERY future training and sampling run. Repointed at
+  ~/tape, a durable git checkout of the same package.
+  VERIFIED IDENTICAL rather than assumed, because ~/tape's files predate
+  the scratchpad copy by a day and could have drifted: (1) the 11,000-step
+  checkpoint's state_dict loads STRICT into a MiniGPT built from ~/tape's
+  ModelConfig - same architecture, no missing or unexpected keys; (2)
+  load_bins reproduces the original run's corpus counts EXACTLY - 76 train
+  bins / 88,020,554 tokens and 13 val bins / 9,624,097 tokens - with max
+  token id 51 < 52. One red herring checked and dismissed: ~/tape's
+  tdata.vocab_size("factored") returns 19, not 52, but that constant is
+  never on this path - vocab comes from out/tokens/manifest.json, which is
+  the BX-refit 52-id manifest.
+
+- 2026-08-02 SCORED-RUN BUDGET = 90 MINUTES (the open half of
+  blocked-on-you item 4, decided by the user). The scored model gets the
+  SAME budget as the budget run - 32,000 steps, ~1.9 epochs of the 88.4M
+  corpus - not the 200k-step option. Consequence to state in the writeup:
+  the headline table is produced by a deliberately small model on a fixed
+  90-minute budget, so a weak LM column is NOT evidence that the
+  architecture cannot do better; it is evidence about what this budget
+  buys. Undertraining is a named, chosen limitation, not a discovered one.
+
+- 2026-08-02 THE SEALED TEST RUN IS AUTHORISED by the user, on
+  {20181228, 20200130} - the pair in src/dataset.hpp. The user's message
+  said "20191228", which is a SATURDAY and not a trading day; no such file
+  exists in data/. Read as a typo for 20181228 and corrected here rather
+  than silently. ORDERING, which the authorisation does not change: TEST
+  is one-shot and unsealing it cannot be undone, so it runs LAST - after
+  viability passes and after the LM stylized column is settled on VAL.
+  Running it earlier would spend the seal on a model we cannot yet score.
+  THE ONE CONDITION UNDER WHICH I STOP AND ASK ANYWAY: if the model's
+  stream is NOT VIABLE at 32k steps, there is no LM column to compare and
+  the TEST days would be unsealed for nothing - that is a different
+  situation from the one authorised, so it goes back to the user.
+
 ## Blocked on you
 Updated 2026-07-31. Each item states specifically what it needs from you.
 1. ARCHITECTURE vs THE CONTEXT GATE - RESOLVED 2026-07-31 by the user:
@@ -1091,14 +1163,11 @@ Updated 2026-07-31. Each item states specifically what it needs from you.
    support now exists (train_corpus.py --resume carries optimizer,
    scheduler and RNG state), and the supervisor caps restarts at 6, so a
    kill now costs one checkpoint interval rather than the whole run.
-2. INSIDE-SPREAD BUCKET GRANULARITY (does not block; distorts). 20.9% of
-   BX panel events price inside the spread and all land in the single -1
-   bucket (RESULTS.md Phase 5). Needs from you: keep the 52-id vocab as
-   is (my default if you say nothing - the window bounds are fine and
-   the cost lands on venue-idiosyncratic expressiveness; the 2026-07-31
-   corpus was built at the current vocab), or approve a depth-graded
-   inside-spread split (vocab change, manifest version bump, refit +
-   retrain + corpus rebuild).
+2. INSIDE-SPREAD BUCKET GRANULARITY - RESOLVED 2026-08-02 by the user,
+   jointly with item 5: KEEP THE 52-ID VOCAB. The 20.9% inside-spread
+   collapse into the single -1 bucket is accepted and becomes a stated
+   limitation of the claim, not an open question. Full text: the
+   2026-08-02 PRICE_OFF RESOLUTION Decision above.
 3. TAPE REPO DIVERGENCE - RESOLVED 2026-07-31 by the user: local HEAD
    (d8b15cc, the split-guard SPEC commit) pushed to daltonoscar0/tape as
    branch `split-guard-spec`, origin now configured in ~/orderflow-lm.
@@ -1107,7 +1176,11 @@ Updated 2026-07-31. Each item states specifically what it needs from you.
    history (local root b2395b8), so it will not merge cleanly - the
    split-guard SPEC text is simplest to cherry-pick/apply onto tape's
    pipeline/SPEC.md when convenient.
-4. REAL TRAINING RUN BUDGET - PARTIALLY RESOLVED 2026-07-31: you asked
+4. REAL TRAINING RUN BUDGET - FULLY RESOLVED. The remaining half (the
+   SCORED run's budget) settled 2026-08-02 by the user: 90 minutes /
+   32,000 steps, same as the budget run. Full text: the 2026-08-02
+   SCORED-RUN BUDGET Decision above. Original text follows.
+   PARTIALLY RESOLVED 2026-07-31: you asked
    me to establish it rather than guess; established (RESULTS.md Step 3a:
    MPS ~6.4 steps/s realized, 90 min = ~32k steps ~= 1.9 epochs of the
    88.4M-token corpus). What remains is item 1b: an uninterrupted window
@@ -1115,10 +1188,15 @@ Updated 2026-07-31. Each item states specifically what it needs from you.
    whether 90 minutes is also the budget for the real model or whether
    it gets longer (200k steps = ~5.6h bench-rate, ~8.7h realized-rate).
 
-5. THE SHIM'S PRICE_OFF INVERSE - LARGELY RESOLVED 2026-07-31 by Claude
-   under an explicit "finish it": option (b) implemented, and the real
-   stream is now VIABLE on all 6 TRAIN days (see the Step 7 Decision).
-   WHAT SURVIVES for you, and it is smaller: the INTERIOR AMBIGUITY. The
+5. THE SHIM'S PRICE_OFF INVERSE - FULLY RESOLVED. Part one 2026-07-31 by
+   Claude under an explicit "finish it": option (b) implemented, and the
+   real stream is now VIABLE on all 6 TRAIN days (see the Step 7
+   Decision). Part two - the surviving INTERIOR AMBIGUITY - RESOLVED
+   2026-08-02 by the user jointly with item 2: option (c) declined, the
+   52-id vocab stands, and the 9.40% mis-placement becomes a stated
+   limitation. Full text: the 2026-08-02 PRICE_OFF RESOLUTION Decision.
+   The original finding is kept below for the record.
+   The INTERIOR AMBIGUITY, as originally written. The
    token cannot distinguish "join occupied level k" from "open a new level
    just better than level k", and 9.40% of real SPY adds are the latter,
    so they still join the level below. Fixing it needs a vocabulary change
