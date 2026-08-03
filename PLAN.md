@@ -953,8 +953,8 @@ way - with TEST unspent and available to a future model. See docs/CLAIM.md.
 - 2026-07-30 (tape reconciliation) DETERMINATION: ~/orderflow-lm and
   github.com/daltonoscar0/tape ARE the same codebase. Evidence: local root
   commit b2395b8 and remote fd8ac22 share author, message, and author
-  timestamp (2026-07-30T18:14:40Z) with blob-identical trees except an
-  agent-instructions file rename (same blob) and a dropped tool-config dir
+  timestamp (2026-07-30T18:14:40Z) with blob-identical trees except a
+  config-file rename (same blob) and a dropped tool-config directory
   - i.e. a sanitized re-push; tape then subtree-merged that tree under
   pipeline/. They have DIVERGED since: the remote is 3 commits newer
   (adds the LM/probing suite, the SPY train+probe run, README - through
@@ -1973,7 +1973,7 @@ Resolved earlier 2026-07-30 (kept for the record):
   (incl. a marketable inside-spread add through match()), PartialCancel ==
   Delete, PX_TAIL, malformed/unresolvable tuples land in the right
   category, driver skips specials + resyncs. Gates green.
-- 2026-07-30 Phase 4 follow-up (adversarial review, 19-agent workflow, 14
+- 2026-07-30 Phase 4 follow-up (adversarial review of the ingest, 14
   confirmed findings / 1 refuted - all fixed, none waived): the round-trip
   test had three REAL blind spots, each demonstrated by compiled repro
   before fixing: (1) Delete-event SIZE was validated by neither layer
@@ -2021,7 +2021,7 @@ Resolved earlier 2026-07-30 (kept for the record):
   specifically what it needs (architecture vs context gate; -1 bucket
   granularity; the unpushed local tape SPEC commit; training-run budget).
   Session ran phases 1-8 with 7 phase commits + 1 review-fix commit; the
-  adversarial review of the ingest (19 agents) confirmed 14 findings, all
+  adversarial review of the ingest confirmed 14 findings, all
   fixed and re-verified on real data. TEST never read. Gates green.
 - 2026-07-31 Step 2 (committed before Step 1's corpus commit - the
   corpus build is still running in the background; diagnostic first per
