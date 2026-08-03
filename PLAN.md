@@ -1562,7 +1562,10 @@ way - with TEST unspent and available to a future model. See docs/CLAIM.md.
   CONSEQUENCE: the seal is not needed and TEST is not spent. docs/CLAIM.md
   updated to the negative result.
 
-- 2026-08-03 REFRAMED AS A BENCHMARK (docs/BENCHMARK.md, README.repo.md),
+- 2026-08-03 (SUPERSEDED SAME DAY - see the FRAMING WITHDRAWN Decision
+  below; kept because the reasoning it contains is still the standard any
+  future reframe has to meet)
+  REFRAMED AS A BENCHMARK (docs/BENCHMARK.md, README.repo.md),
   decided by the user AFTER the negative result. Logged with that ordering
   stated explicitly, because reframing a failed modelling project as a
   benchmark is exactly how a negative result gets laundered into a
@@ -1589,6 +1592,32 @@ way - with TEST unspent and available to a future model. See docs/CLAIM.md.
   indistinguishable from real data at 50k tokens and at 6.4% two-sided by
   day scale). Every viability number this project recorded before today
   violated that rule.
+
+- 2026-08-03 BENCHMARK FRAMING WITHDRAWN, same day, at the user's
+  direction: the docs now present the project as what it is - a failed
+  attempt with a well-characterised failure and a reusable apparatus -
+  rather than as a benchmark with one failing entry.
+  WHY THIS IS THE BETTER CALL, and it is not merely cosmetic: the
+  benchmark framing was defensible (the earlier Decision's argument still
+  holds - nothing was renamed, no threshold moved, the failing entry
+  stayed in the table) but it put the emphasis on the reusable apparatus
+  and made the failure a row in a standings table. That is a real
+  distortion of what happened, even with every number intact. The project
+  set out to model order flow and did not. Leading with that is the
+  accurate presentation; leading with the harness is the flattering one.
+  WHAT CHANGED: docs/BENCHMARK.md removed (content preserved in git and
+  its practical parts folded into README + POSTMORTEM); docs/POSTMORTEM.md
+  written as the centrepiece - what was tried, what failed, SEVEN process
+  mistakes with their lessons, what is worth keeping, what to try next;
+  README.repo.md leads with "it didn't work"; docs/CLAIM.md rewritten to
+  lead with the failure rather than the apparatus.
+  WHAT DID NOT CHANGE, and deliberately: RESULTS.md and BENCH.md are
+  untouched - they are append-only, and rewriting the measurement logs to
+  match a new narrative is precisely the thing the append-only rule exists
+  to prevent. The dated Decisions above are untouched for the same reason,
+  including the superseded benchmark Decision: an audit trail that gets
+  tidied is not an audit trail. Two mechanism claims retracted earlier
+  today remain legible in RESULTS.md as corrections naming their originals.
 
 ## Blocked on you
 Updated 2026-07-31. Each item states specifically what it needs from you.
