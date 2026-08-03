@@ -51,9 +51,29 @@ replay/match).
       TRAIN+VAL days (RESULTS.md), with per-day spread reported. The split
       is mechanical (src/dataset.hpp); TEST = {20181228, 20200130} is
       sealed until the final comparison (see Decisions).
-- [ ] Fat tails (return kurtosis), volatility clustering (ACF of |r|),
+- [x] Fat tails (return kurtosis), volatility clustering (ACF of |r|),
       order-flow autocorrelation, square-root impact fit - for the LM sim
-      and null columns once Phase 2 exists
+      and null columns once Phase 2 exists.
+      CLOSED 2026-08-03, with three of the four resolved and one dropped:
+      * NULL column - DONE (7 seeds, TRAIN-calibrated, all four facts).
+      * LM column - the tooling exists (tools/lm_sim + stylized) and was
+        exercised, but NO STYLIZED FACTS ARE PUBLISHED FOR THE LM: its
+        stream is NOT VIABLE 8/8 at day scale, and computing stylized
+        facts on a one-sided or dead book would be measuring the harness,
+        not the model. The LM result is the VIABILITY result.
+      * Volatility clustering - DEMOTED to a documented limitation
+        (Decision 2026-08-03): the pipeline destroys it and the ablation
+        that would have shown why is degenerate by our own rule.
+      * SQUARE-ROOT IMPACT FIT - DROPPED, explicitly rather than quietly.
+        It was listed here in week 7 and then never entered the
+        2026-07-30 pre-registration, which fixed the scored facts as flow
+        memory + persistence and the four sanity checks. It was therefore
+        never a scoring criterion, and BX executes far too little to fit
+        an impact curve per symbol (max 2,945 market orders per
+        symbol-day; 19 of 49 symbols cannot even reach 500 signs). Adding
+        it now, after results exist, would be exactly the target-moving
+        the pre-registration forbids. Recorded as not done and not
+        claimed.
 - [x] Compare vs Cont-Stoikov-Talreja null model - null COLUMN done
       2026-07-30 (src/cst.hpp, tools/cst_calibrate + cst_sim; calibrated on
       TRAIN, 7 seeds, same stylized pipeline). Verdict: flow-sign memory
@@ -62,7 +82,12 @@ replay/match).
       from book mechanics and are demoted to sanity checks (RESULTS.md
       null-column section). The real-vs-LM-vs-null table still waits on
       Phase 2.
-Milestone: table of stylized facts, real vs LM-sim vs null - the headline result.
+Milestone: table of stylized facts, real vs LM-sim vs null - the headline
+result. NOT MET, and closed as NOT MET on 2026-08-03 rather than left open:
+the table needs an LM column, and no model produced a viable stream to build
+one from. What the project publishes instead is the NEGATIVE result - a
+validated apparatus, a reachable bar, and a model that fails it in a located
+way - with TEST unspent and available to a future model. See docs/CLAIM.md.
 
 ## Phase 4 (stretch): Execution agent
 - [ ] Almgren-Chriss baseline; RL or policy-gradient agent inside the sim
@@ -164,12 +189,27 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   distribution it never saw. BETTER ASKED BEFORE THE SEAL IS BROKEN THAN
   AFTER - and answerable without unsealing, since it is a question about
   the TRAIN/VAL corpus bins.
-- NEXT, in order: (1) decide what to do about a model that decays - which
-  of undertraining, open-loop sampling, or the one-way ratchet dominates
-  is NOT settled, so the first move is a cheap experiment that separates
-  them, not a 90-minute retrain chosen by guess; (2) settle the second
-  scored fact by a different experiment or a dated Decision demoting it;
-  (3) only then TEST.
+- THE PROJECT IS FINISHED ON THE NEGATIVE RESULT. Option (a) chosen by the
+  user 2026-08-03: publish what exists rather than attempt a fix first.
+  Closed out: Phase 3 milestone recorded as NOT MET with the reason;
+  square-root impact fit DROPPED explicitly (never in the
+  pre-registration, and BX cannot support it); scored fact 2 DEMOTED to a
+  documented limitation; docs/CLAIM.md rewritten around the negative
+  result; BENCH.md row for the sampler. TEST NEVER UNSEALED and therefore
+  still available to a future model - which is worth more than a table
+  published now.
+- IF SOMEONE PICKS THIS UP LATER, the target is narrow and named: the
+  model generates enough ACTIVITY (V1 passes) but cannot hold a TWO-SIDED
+  book, and the marginals are ruled out, so the failure is in the
+  CONDITIONAL structure - which action at which level GIVEN the book. Two
+  cheap experiments before any retrain: (1) close the loop - the Phase 2
+  adapter already exposes top-N BookView feedback and the sampler does not
+  use it; (2) test whether the shim's one-way ratchet is repairable, since
+  depth creation happens only at the touch, which is what makes book
+  damage permanent. Neither needs a training run.
+- ALSO UNRESOLVED, and it should be settled before any future seal: the
+  split is not exchangeable on PRICE_OFF (leave-one-out TV 0.082-0.288
+  across TRAIN+VAL; VAL outside the TRAIN range entirely).
 - Read this cold (2026-08-02, session ended by the user to resume tomorrow).
   SUPERSEDES the 2026-07-31 status below, which is kept for the record.
 - THE BUDGET TRAINING RUN IS DONE. 32,000 steps, VAL held-out 0.9249,
@@ -1495,6 +1535,32 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   viable, and the second scored fact is unsettled. Spending a one-shot
   irreversible read to produce a column with no model behind it is the one
   thing the seal protocol exists to prevent. TEST remains sealed.
+
+- 2026-08-03 SCORED FACT 2 IS DEMOTED to a documented limitation, and the
+  project finishes on the NEGATIVE RESULT (option (a), chosen by the user).
+  This Decision names the 2026-07-30 RATIFICATION Decision that made
+  tick-time volatility-clustering persistence the second scored fact, and
+  states what changed and why, per that Decision's own protocol.
+  WHAT CHANGED, and note the direction: (i) the generation pipeline
+  DESTROYS the statistic (tick ACF 0.503 -> -0.000, Step 8), and (ii) the
+  ablation built specifically to find out why is INCONCLUSIVE - both
+  variants are degenerate by this project's OWN measurability rule
+  (vartop10 0.9966 and 0.8462 against a >= 0.5 UNMEASURED threshold), and
+  the degeneracy looks intrinsic to the design rather than tunable. So the
+  fact COULD NOT HAVE BEEN SCORED even if a viable model had existed.
+  WHY THIS IS NOT TARGET-MOVING, which is the thing to check whenever a
+  scored fact is dropped after results exist: demotion makes the claim
+  NARROWER, not wider. It rescues no result - no LM was scored on
+  ANYTHING, because none produced a viable stream. Dropping a fact the
+  model failed would be target-moving; dropping a fact the APPARATUS
+  cannot measure, while the model fails a different and still-standing
+  bar, is a limitation being admitted. The ratification itself was sound
+  on the evidence available on 2026-07-30; what was not known then is that
+  the pipeline cannot carry the statistic.
+  FLOW-SIGN MEMORY IS UNTOUCHED and remains the scoring fact of record. It
+  was never exercised against an LM, because there was no viable LM.
+  CONSEQUENCE: the seal is not needed and TEST is not spent. docs/CLAIM.md
+  updated to the negative result.
 
 ## Blocked on you
 Updated 2026-07-31. Each item states specifically what it needs from you.
