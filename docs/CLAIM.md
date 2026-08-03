@@ -9,6 +9,13 @@ DEMOTION (scored fact 2, below), which makes the claim narrower, not wider.
 
 Every qualifier is cited to the RESULTS.md row or PLAN.md Decision behind it.
 
+**On 2026-08-03 the project was also reframed as a benchmark**
+(`docs/BENCHMARK.md`), AFTER the negative result below. That reframe changed no
+threshold, bar, scored fact, measurability rule, or measured number, and the
+failing entry appears in the benchmark's own standings table. This document
+remains the claim record; BENCHMARK.md is the front door for anyone wanting to
+run an entry.
+
 ## The claim, fully qualified
 
 **A matching engine and order-book reconstruction that is provably correct on

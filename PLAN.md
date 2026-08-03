@@ -1562,6 +1562,34 @@ way - with TEST unspent and available to a future model. See docs/CLAIM.md.
   CONSEQUENCE: the seal is not needed and TEST is not spent. docs/CLAIM.md
   updated to the negative result.
 
+- 2026-08-03 REFRAMED AS A BENCHMARK (docs/BENCHMARK.md, README.repo.md),
+  decided by the user AFTER the negative result. Logged with that ordering
+  stated explicitly, because reframing a failed modelling project as a
+  benchmark is exactly how a negative result gets laundered into a
+  deliverable, and the only defence is that the record says when the
+  reframe happened and what it did or did not touch.
+  WHAT THE REFRAME DOES NOT TOUCH - the list is the point: no threshold,
+  bar, scored fact, measurability rule, seed count, envelope, verdict
+  partition, or measured number changed. The failing entry
+  (budget32k_v2, NOT VIABLE 8/8) is IN the standings table, named, with
+  its decay curve. The sealed TEST days stay sealed. The
+  pre-registration is cited, not rewritten.
+  WHY IT IS DEFENSIBLE ANYWAY: the artifact genuinely is a benchmark and
+  always was one - a correct engine validated on real data, a
+  TRAIN-calibrated memoryless floor, a pre-registered scoring rule
+  committed before any model existed, a viability bar that real data
+  demonstrably passes, and two never-read held-out days. That apparatus
+  is what usually takes months and is easy to get subtly wrong; it does
+  not depend on the model that failed. The reframe changes which part of
+  the work is the headline, not what any part of it says.
+  WHAT IT ADDS THAT MATTERS TO A FUTURE ENTRANT, beyond re-labelling:
+  the day-scale requirement is now stated as a RULE rather than a
+  finding - viability measured below ~1.07M tokens is not a measurement,
+  because short streams flatter models badly (the failing entry is
+  indistinguishable from real data at 50k tokens and at 6.4% two-sided by
+  day scale). Every viability number this project recorded before today
+  violated that rule.
+
 ## Blocked on you
 Updated 2026-07-31. Each item states specifically what it needs from you.
 1. ARCHITECTURE vs THE CONTEXT GATE - RESOLVED 2026-07-31 by the user:
