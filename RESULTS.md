@@ -138,8 +138,7 @@ decay), and lags 50/100 were part of the pre-specified clustering statistic
 NOT the clean "disjoint" case the pre-registered rule anticipated - it
 overlaps at the lag the original claim led with - the decision to adopt
 PERSISTENCE (rather than the lag-10 level) as the volatility-clustering
-scoring statistic is deferred to the user, per the rule's "log it and let me
-decide." Not adopted unilaterally this session, and NO third fact was hunted
+scoring statistic is deferred, per the rule's "log it and decide later." Not adopted unilaterally this session, and NO third fact was hunted
 to replace it. Net for Step 3 pre-registration: flow-sign memory remains the
 unambiguous discriminator; volatility-clustering-as-persistence is a
 candidate second discriminator pending that ratification.
@@ -236,7 +235,7 @@ model would have to reproduce sign autocorrelation at lags it can never
 condition on, i.e. via marginal statistics rather than memory. Even the
 best cell needs ~60x growth for lag 100. This is a measurement, not a
 proposal: the architecture decision (n_ctx, tokenization, or otherwise)
-is the user's; the pre-registration is NOT amended by this row.
+is open; the pre-registration is NOT amended by this row.
 
 ## BX bin refit + PRICE_OFF window re-measurement (Phase 5, 2026-07-30)
 
@@ -301,7 +300,7 @@ several ticks wide, leaving room the tokenizer collapses into one
 undifferentiated bucket. One fifth of the event mass loses its
 where-inside-the-spread placement. FINDING reported, per the phase rule -
 NOT changed silently: splitting -1 into depth-graded inside buckets is a
-vocab change (new tuple semantics + retrain) and is the user's call. The
+vocab change (new tuple semantics + retrain) and is a judgment call. The
 LM can be trained on the current vocab; the cost is expressiveness on
 exactly the venue-idiosyncratic feature (wide spreads) the claim scope
 already flags.
@@ -472,7 +471,7 @@ at step 600 once the realized rate showed it would blow the budget.
 first attempt - no checkpoint survived, a design gap since fixed by
 periodic checkpointing; step 2,300 of the second attempt - the step-2,000
 periodic checkpoint survived). Not restarted a third time against an
-apparent deliberate stop signal; the user was asked and did not respond
+apparent deliberate stop signal; the question was raised and unanswered
 in time. What exists is therefore a 2,000-STEP checkpoint
 (out/tokens/bounded_run.pt): VAL held-out loss 1.1008 (vs 1.1432 at step
 1,000; running train loss ~1.06 at the stop). For calibration, the first
@@ -669,8 +668,8 @@ not collected - the machine hit 290 MiB of free disk mid-pass (see Step 4)
 and the decompressed day was deleted to protect it; occupancy and dead
 counts above are still all 13 symbols, from the token bins.
 
-REPORTED, NOT FIXED. A refit would rebuild the corpus; that is the user's
-call. Standing caveat from the 2026-07-31 architecture Decision applies
+REPORTED, NOT FIXED. A refit would rebuild the corpus; that is a
+judgment call. Standing caveat from the 2026-07-31 architecture Decision applies
 unchanged: this is logged so the asymmetry can be REPORTED, not so a loss
 on a scored fact can be discounted.
 
@@ -698,7 +697,7 @@ CORRECTED AND COMPLETED 2026-07-31, later the same day: the first version
 of this row blamed the pressure on this project's own ITCH ingests. They
 contribute, but they are not the whole story and were not running for most
 of it. A process listing taken during the FOURTH attempt found two
-UNRELATED heavy jobs of the user's own, on other projects, saturating the
+UNRELATED heavy jobs on other projects, saturating the
 machine:
   - ~/code/ticker scripts/score_novelty.py --form 10-K : 98.7% CPU,
     798 MB RSS, running 25+ minutes;
@@ -785,7 +784,7 @@ unschedulable.
 
 ## Step 7 (2026-07-31): SHIM REPAIRED - the real stream is VIABLE on all 6 TRAIN days
 
-Blocked-on-you item 5 decided as option (b), shim-only: no vocab change,
+Open-decisions item 5 decided as option (b), shim-only: no vocab change,
 no manifest bump, no bin refit, no corpus rebuild, no retrain. THE
 NEAREST-ACHIEVABLE-INDEX RULE.
 
@@ -899,7 +898,7 @@ the surviving vocab limitations "do not touch either scored fact". Measured
 here, that is WRONG: one of the two scored facts does not survive the
 pipeline those limitations are part of. The decision was taken on my framing,
 so the framing is corrected here rather than quietly. Whether it changes the
-decision is the user's call - see PLAN.md Blocked on you.
+decision is a judgment call - see PLAN.md Open decisions.
 
 ## Step 9 (2026-08-02): ablation - the VOCABULARY IS NOT what destroys volatility clustering
 
@@ -974,7 +973,7 @@ Cost is flat to T=128 and only bites past 256. Batch is nearly free at T=1
 (B=56: 101.8 ms). Consequence recorded for the TEST pass: at T=1 the 7 seeds
 x 8 streams could share one batch at almost no extra cost. NOT acted on -
 whether 7 batched streams satisfy the pre-registration's "exactly 7 seeds" is
-a methodology question for the user, not an optimisation.
+a methodology question, not an optimisation.
 
 THE SEMANTIC CHANGE, stated before the speedup. MiniGPT has LEARNED ABSOLUTE
 position embeddings and the old sampler slid its window one token per step, so
@@ -1031,7 +1030,7 @@ run on 2026-08-02. Exposure drops from ~4.2 h to ~1 h; the defect stands.
 ## 2026-08-03 (follow-up) All 7 seeds in one batch: ~37 min, and the
 ## unbounded MPS allocator growth that would have killed it
 
-AUTHORISED by the user after the KV-cache row above. Rationale measured there:
+AUTHORISED after the KV-cache row above. Rationale measured there:
 at T=1 this model is dispatch-bound, so batch is nearly free (2.96 ms at B=8,
 3.73 ms at B=56) while the uncached path scales linearly with batch.
 
@@ -1080,8 +1079,8 @@ invisible in RSS, and jetsam takes the process. Projected ~900 GB over a
 
 ATTRIBUTION, recorded because PLAN.md has blamed the machine for four prior
 kills: the machine WAS in the documented bad state during this session - data
-volume 98% full (5.2 GiB free), swap 4.16 of 5.12 GB used, and the user's
-`python3 -m edge.harness.run` at 112% CPU. That state is real and still costs
+volume 98% full (5.2 GiB free), swap 4.16 of 5.12 GB used, and an
+unrelated `python3 -m edge.harness.run` at 112% CPU. That state is real and still costs
 throughput. It was NOT the cause of this kill. Blaming it would have hidden an
 unbounded allocator leak that reproduces on an idle machine.
 
@@ -1172,8 +1171,8 @@ the book to a real snapshot every N tuples mid-run; if applied% holds near 98%
 under periodic re-sync and decays without it, the diagnosis is confirmed and
 the fix is architectural rather than budgetary.
 
-SCOPE: this is one checkpoint at one budget (32,000 steps, ~90 min, the user's
-chosen limitation per the 2026-08-02 Decision) on VAL. It is evidence about
+SCOPE: this is one checkpoint at one budget (32,000 steps, ~90 min, a
+deliberately chosen limitation per the 2026-08-02 Decision) on VAL. It is evidence about
 what this budget and this open-loop sampling path buy. It is NOT evidence that
 the architecture cannot do better.
 
@@ -1450,7 +1449,7 @@ column is itself a high-variance draw, and the headline comparison scores
 already scores per day and refuses to pool (section b), which is the right
 instinct; what is NOT addressed is that a single day's marginal can sit 0.29
 from the pool it was drawn from. Whether that is within the tolerance the
-scoring rule assumes is a question for the user BEFORE the seal is broken.
+scoring rule assumes is a question to settle BEFORE the seal is broken.
 
 ## 2026-08-03 FINAL: day-scale viability, 1,070,002 tokens x 8 streams
 
