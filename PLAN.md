@@ -68,6 +68,108 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
 - [ ] Almgren-Chriss baseline; RL or policy-gradient agent inside the sim
 
 ## Status
+- Read this cold (2026-08-03). SUPERSEDES everything below, which is kept
+  for the record.
+- THE HEADLINE, and it is a NEGATIVE RESULT that is now solid enough to
+  publish: the 32,000-step model is NOT VIABLE, 8 of 8 streams, and the
+  failure is CHARACTERISED - the book decays MONOTONICALLY with stream
+  length (best stream: 98.5% applied / 100% two-sided at 50k tokens ->
+  60.1% / 23.0% at 300k). More sampling makes it worse, so there is no
+  length at which it passes.
+  MEASURED AT DAY SCALE, run completed: 1,070,002 tokens x 8 streams,
+  ~214k tuples each, 34.1 min on CPU. NOT VIABLE 8/8. Best two-sided 6.4%
+  (down from 17.2% at 400k - the decay continues), 3 books dead, and the
+  s3 curve is monotonic across five and a half doublings: 100.0% ->
+  69.0% -> 34.5% -> 23.0% -> 17.2% -> 6.4% two-sided.
+  V1 PASSED FOR THE FIRST TIME EVER (s3, 536 signs >= 500; four more
+  streams at 366-454). The bar was never unreachable - it was never
+  TESTED, because it needs ~0.5M+ tokens/stream and no run before tonight
+  had them. The "V1 is not testable" caveat standing since 2026-07-31 is
+  retired, and the threshold looks calibrated rather than arbitrary.
+  So the failure is precisely located: the model generates enough ACTIVITY
+  at day scale but cannot maintain a TWO-SIDED book, and the gap widens
+  the longer it runs.
+- THE CONTROL THAT MAKES THAT TRUSTWORTHY: the REAL BX token stream
+  through the same harness IMPROVES with length (99.77% applied, 100%
+  two-sided, 1,844 signs at 213,754 tuples) and would PASS all three
+  criteria. So the harness is exonerated, the bar is reachable, and the
+  repaired shim is validated at day scale for the first time.
+- WHAT THAT INVALIDATES: every earlier viability verdict here was taken at
+  SHORT stream length, which systematically flatters the model (at 50k
+  tokens the model gives 60 signs vs the real stream's 73 - nearly
+  indistinguishable). The 2026-07-31 "5 of 8 keep the book alive" row and
+  this session's 60k-token comparison are length artifacts.
+- TEST IS STILL SEALED. The user authorised the sealed run and asked to
+  proceed; the prior gate in that same Decision fired instead (no viable
+  stream = no LM column). Two independent blockers: viability, and the
+  unsettled second scored fact.
+- SECOND SCORED FACT STILL OPEN. The order-identity ablation
+  (tools/ablate --mode noref, new) is INCONCLUSIVE: both variants are
+  degenerate by this project's own vartop10 >= 0.5 measurability rule.
+  It blocks the seal independently of the model.
+- TOOLING BUILT TONIGHT: pylm/kvcache.py (KV cache, 4.7x, with its
+  semantic cost documented), all-seeds-in-one-batch sampling with per-seed
+  RNG streams, sample.py checkpointing (a kill no longer costs the run),
+  tools/ablate --mode noref. Gates green.
+- ENVIRONMENT: Anaconda was deleted while freeing disk; everything now
+  runs on /usr/bin/python3 (torch 2.4.1). CPU is 10.8x FASTER than MPS for
+  this 227k-param model - the device default was never measured and was
+  worth more than the cache.
+- THE MECHANISM IS OPEN, and one attractive explanation was TESTED AND
+  REFUTED the same night rather than left standing. Hypothesis: generation
+  is open-loop (the model sees no book state, yet PRICE_OFF is a level
+  index RELATIVE to the book), so errors compound and retraining would not
+  help. Test (no new code): cut one stream into consecutive 50k slices and
+  replay each from a FRESH real book - if only book drift were at fault,
+  every slice would score like the first. It does not: applied runs 98.5%,
+  66.9%, 52.6%, 79.2%, 13.5%, 49.7%, 98.5%, 15.1%. A healthy book does not
+  rescue most slices, so the strong hypothesis is dead and the claim that
+  retraining cannot help is WITHDRAWN.
+  WHAT IT SHOWED INSTEAD - INTERMITTENCY. The slice at tokens 300k-350k
+  scores 98.45% applied / 100% two-sided, as good as the opening slice.
+  The model still emits real-quality flow deep into a stream; it does not
+  SUSTAIN it. Local quality oscillates 13%-98% within one stream, while
+  the FULL-stream curve decays monotonically - reconciled by the one-way
+  book ratchet already on record (level destruction unrestricted, creation
+  only at the touch): a bad stretch permanently thins the book, a good
+  stretch cannot rebuild it, so the decay is the INTEGRAL of the damage,
+  not a trend in the tokens.
+  Caveat kept with the finding: the slice test conflates token quality
+  with model-book/real-book mismatch (PRICE_OFF is relative), so it
+  refutes cleanly but proves nothing positive. The confound-free signal is
+  the VARIANCE across slices.
+- FOUR CANDIDATE MECHANISMS ARE NOW ELIMINATED BY MEASUREMENT, which is
+  the real progress of the night even though each elimination retracted
+  something I had just asserted:
+  (a) NOT the harness - real streams pass at day scale on both a VAL day
+      (99.77% applied, 1,844 signs) and a TRAIN day (99.90%, 4,137 signs).
+  (b) NOT book drift alone - replaying 50k slices from a FRESH real book
+      does not rescue most of them.
+  (c) NOT the TYPE mix - ADD/CANCEL/DELETE proportions match real and are
+      INDISTINGUISHABLE between the best (98.5% applied) and worst (13.5%)
+      slices.
+  (d) NOT the PRICE_OFF marginal - the model matches its TRAIN corpus
+      (TV 0.107) and the real TRAIN day with the MOST extreme
+      touch-concentration in the corpus (PX+0 0.558, beyond the model's
+      0.465) is fully viable at 2.98M tokens.
+  WHAT REMAINS, unmeasured: the CONDITIONAL structure - which action at
+  which level GIVEN the current book, and sequence-level dependence that
+  first-order marginals cannot see.
+- A SPLIT PROBLEM SURFACED, and it is about the SPLIT, not the model:
+  TRAIN and VAL differ sharply on PRICE_OFF (TV 0.272), VAL's PX+0 (0.254)
+  lies OUTSIDE the range of all six TRAIN days (0.315-0.558), and the
+  TRAIN days themselves span that whole range. The days are far from
+  exchangeable on this statistic. If the TEST days differ from TRAIN as
+  much as VAL does, the headline comparison would score the model on a
+  distribution it never saw. BETTER ASKED BEFORE THE SEAL IS BROKEN THAN
+  AFTER - and answerable without unsealing, since it is a question about
+  the TRAIN/VAL corpus bins.
+- NEXT, in order: (1) decide what to do about a model that decays - which
+  of undertraining, open-loop sampling, or the one-way ratchet dominates
+  is NOT settled, so the first move is a cheap experiment that separates
+  them, not a 90-minute retrain chosen by guess; (2) settle the second
+  scored fact by a different experiment or a dated Decision demoting it;
+  (3) only then TEST.
 - Read this cold (2026-08-02, session ended by the user to resume tomorrow).
   SUPERSEDES the 2026-07-31 status below, which is kept for the record.
 - THE BUDGET TRAINING RUN IS DONE. 32,000 steps, VAL held-out 0.9249,
@@ -1177,6 +1279,222 @@ Milestone: table of stylized facts, real vs LM-sim vs null - the headline result
   stream is NOT VIABLE at 32k steps, there is no LM column to compare and
   the TEST days would be unsealed for nothing - that is a different
   situation from the one authorised, so it goes back to the user.
+
+- 2026-08-03 KV CACHE for sampling (pylm/kvcache.py), and the SEMANTIC
+  CHANGE it forces - logged because it changes what the model conditions
+  on, which is not an implementation detail.
+  WHY: sampling, not training, is the remaining wall-clock cost. Measured
+  on this machine (M4/MPS, budget32k_v2's 227k-param config, batch 8):
+  full forward at n_ctx=320 = 16.65 ms, full step 18.96 ms, 52.3
+  tok/s/stream. 319 of every 320 positions were recomputed and discarded.
+  THE PROBLEM, which has no clean fix: MiniGPT uses LEARNED ABSOLUTE
+  position embeddings and the old sampler slid its window by one token per
+  step, so every token's position - and therefore every cached key and
+  value - changed every step. An EXACTLY equivalent KV cache for this
+  model DOES NOT EXIST. That is a property of absolute-PE + sliding
+  window, not a shortcut anyone took.
+  WHAT WAS BUILT INSTEAD - CHUNKED REFRESH: hold the window fixed while
+  the cache fills, then advance it by refresh_stride and rebuild with one
+  prefill. Consequence, stated plainly: the model now sees between
+  (n_ctx - stride) and n_ctx tokens of history where it previously always
+  saw n_ctx. At the default stride 64 that is 256..320, mean 288.
+  WHY THAT IS ACCEPTABLE HERE, argued rather than asserted: the context
+  gate (2026-07-30 Phase 1 finding) already established that n_ctx=320
+  cannot express the scored fact at all - the median requirement is 294.5x
+  the context, and lag 1 alone typically exceeds it. A 10% mean reduction
+  in a window already two orders of magnitude too short cannot change a
+  scored-fact verdict. If the architecture ever grows a context that CAN
+  express the fact, this trade must be revisited, not inherited.
+  THE VERIFICATION STANDARD WAS WEAKENED ON PURPOSE, and the weakening is
+  the point to notice. The 2026-07-31 preallocation fix was checked
+  BYTE-IDENTICAL against the old loop. This one cannot be: chunked refresh
+  changes the conditioning context, so streams MUST diverge. Claiming
+  byte-identity here would have been false. What replaced it:
+  (1) EXACT where exactness is available - pylm/test_kvcache.py pins
+  prefill == MiniGPT.forward (max |diff| 4.8e-7), teacher-forced cached
+  step == sliding-window forward over all pre-slide steps (4.8e-7),
+  prefill fully resets cache state, and post-refresh logits == an uncached
+  forward over the window the cache actually holds. Cache arithmetic is
+  therefore proven correct independently of what the sampler does with it.
+  (2) The PREDICTED divergence point, which is the sharpest evidence the
+  implementation is right: the window first moves at token 320, and on the
+  real checkpoint all 8/8 streams are IDENTICAL to the uncached stream for
+  the first 319 tokens and first diverge at index 321. A wrong cache
+  diverges immediately; this one diverges exactly where theory says.
+  (3) DISTRIBUTIONAL, since byte-identity is unavailable: token-histogram
+  total-variation distance cached-vs-uncached is 0.047-0.059, BELOW the
+  0.061 split-half noise floor of the uncached run against itself and
+  below the 0.070 seed-to-seed distance. The cache is not distinguishable
+  from a reseed at this sample size.
+  (4) DOMAIN-LEVEL: sim_health warm-started on 4 streams per mode, 60k
+  tokens each - identical verdict on all 8 (NOT VIABLE, V1 FAIL, V3 pass).
+  Honest limit of this arm, stated rather than buried: the within-mode
+  seed spread (applied 48-77% uncached, 51-99% cached) is WIDER than the
+  between-mode difference, so with 4 streams it confirms no gross
+  behavioural change and cannot certify more than that. The histogram test
+  is the stronger evidence.
+  MEASURED RESULT: 4.68x at batch 8 (52.3 -> 244.9 tok/s/stream), 2.95x at
+  batch 4. Stride 128 is not faster than 64 (the incremental step, not the
+  refresh, is the floor), so 64 is the default: same speed, more history.
+  --no-kv-cache retains the original loop, which is how any pre-2026-08-03
+  RESULTS row gets reproduced.
+  WHERE THE CODE LIVES, and why it moved: pylm/ in THIS repo, not
+  out/tokens/ alongside sample.py. out/ is gitignored, and the 2026-08-02
+  scratchpad-path bomb survived four kills precisely because the
+  generation scripts were untracked. New load-bearing logic does not go
+  back into an untracked directory. sample.py still lives in out/ and is
+  still untracked - moving the existing files is a separate call.
+  NOT DONE, flagged not fixed: sample.py still writes only at the END of a
+  run, so a kill still costs everything. That is now a ~1 h exposure
+  rather than ~4.2 h, but it is the same defect that lost the 100k-token
+  run on 2026-08-02.
+
+- 2026-08-03 ALL 7 SEEDS IN ONE BATCH (--seeds), authorised by the user
+  ("drop it to 1 hr"). At n_ctx=1 this model is dispatch-bound, so batch is
+  nearly free (2.96 ms at B=8, 3.73 ms at B=56) while the uncached path
+  scales linearly with it. 7 seeds x 8 streams therefore cost about what
+  one seed cost before.
+  HOW THE PRE-REGISTRATION IS KEPT LITERALLY TRUE, since "LM seeds =
+  EXACTLY 7" is a fixed term of the amended pre-registration and batching
+  could have quietly reinterpreted it as "56 streams from one seed": each
+  seed gets its OWN torch.Generator, and its uniforms are drawn only from
+  that generator, in an order independent of how many seeds share the
+  batch. So the 7 groups are 7 genuinely distinct RNG streams that happen
+  to share a forward pass, not one stream partitioned after the fact.
+  Verified rather than asserted: seed 3 run ALONE at batch 8 reproduces
+  seed 3's block inside the 56-row batch byte-for-byte on 7 of 8 streams
+  over 20,000 tokens; the 8th is identical for 17,537 tokens and then
+  diverges (fp tie-flip - batched matmul tiling differs at B=56 vs B=8, so
+  one near-boundary categorical draw resolves the other way and the
+  streams decorrelate after it). Exact in logic, subject to GPU fp
+  non-determinism across batch shapes. Said plainly so nobody later reads
+  "reproducible" as stronger than it is.
+  SAMPLER RULE CHANGED, and why it had to: torch.multinomial takes ONE
+  generator per call, so 7 distinct seeds would need 7 calls per step
+  (~3 ms each at batch 8 = ~21 ms, worse than the problem being solved).
+  Replaced with inverse-CDF sampling from bulk-drawn per-seed uniforms,
+  which is both seed-separable and cheaper than multinomial (0.36 ms vs
+  3.00 ms at batch 8). The sampling RULE is not pre-registered - only
+  temperature/top-k selection and the seed count are - so this is an
+  implementation call, logged because it changes streams. Correctness
+  pinned by a chi-square-style gate (empirical vs target max error 0.0030
+  over 20k draws) and a clamp gate (fp cumsum can land under 1.0, so a
+  uniform above it would index past the vocabulary).
+  A REAL BUG FOUND ON THE WAY, and it would have killed the TEST run: the
+  first 56-row attempt died with EXIT 137 (SIGKILL). RSS was NOT the
+  cause - it plateaued at ~230 MB. Every prefill creates ~112 MB of
+  transient tensors at batch 56 and the MPS caching allocator never reused
+  them: driver-allocated memory grew LINEARLY at ~1.8 MB/token (1.68 GB at
+  500 tokens -> 13.78 GB at 7,500) while live-tensor memory stayed flat at
+  41.8 MB. On Apple Silicon that is unified memory, so it is invisible in
+  RSS and jetsam takes the process. Projected to ~900 GB over a 500k-token
+  run - the 1-hour plan would have died every time. Fixed with
+  torch.mps.empty_cache() every 8 refreshes: bounded at ~1.7 GB, no
+  measurable throughput cost, and the 20k-row run that died now completes.
+  NOTE FOR THE RECORD, because PLAN has blamed the machine four times: the
+  machine WAS also in the documented bad state during this session (data
+  volume 98% full / 5.2 GiB free, swap 4.16 of 5.12 GB used, and the
+  user's python3 -m edge.harness.run at 112% CPU). That state is real and
+  still costs throughput - but it was NOT the cause of this kill, and
+  attributing this one to it would have hidden an unbounded allocator
+  leak. Boring explanation first, as the working rules say; this time the
+  boring explanation was our own bug.
+  MEASURED: 20,000 tokens x 56 streams in 1.5 min = 228 tok/s/stream,
+  12,794 tok/s total, WHILE contending with the edge job. Projected 500k x
+  56 = ~37 min, against ~18.6 h for 7 sequential uncached batch-8 runs
+  (~30x). The user's "1 hr" target is met with margin.
+
+- 2026-08-03 THE ENVIRONMENT MOVED UNDER US, twice, and both moves matter
+  more than they look.
+  (1) ANACONDA WAS DELETED while freeing disk. /opt/anaconda3 is gone - it
+  was ~37 GiB and it was the interpreter every script here named by
+  ABSOLUTE PATH. Repointed to /usr/bin/python3 (3.9.6, torch 2.4.1, numpy
+  1.26.4); out/tokens/sweep.sh was the only other file carrying the dead
+  path. All 10 pylm gates re-verified green on the older torch, checkpoint
+  loads, tape imports. Same class of failure as the 2026-08-02 scratchpad
+  path: a hardcoded absolute interpreter path outside version control.
+  (2) CPU IS 10.8x FASTER THAN MPS for this model - 703.7 vs 65.4
+  tok/s/stream at batch 8. The model is 227k parameters, far too small to
+  amortise GPU dispatch, and torch 2.4.1's MPS path is worse than 2.9.1's
+  (~200 us/op vs ~58). Every measurement in this project, including the KV
+  cache design above, was taken on MPS because that is what training used
+  and what the sampler defaulted to. THE DEVICE CHOICE WAS WORTH MORE THAN
+  THE CACHE (10.8x vs 4.7x) and it was never questioned. The cache still
+  earns its place - it is a device-independent algorithmic win, and both
+  compose - but the lesson is that the default was never measured.
+
+- 2026-08-03 VIABILITY AT DAY SCALE: NOT VIABLE, and now CHARACTERISED
+  rather than merely observed. First verdict at real-day stream length
+  (~1.07M tokens = ~213k tuples) on the repaired decoder; V1 has never
+  before been testable at any length ever sampled.
+  THE FINDING - MONOTONIC DECAY WITH STREAM LENGTH. One stream (s3, the
+  BEST of 8), everything else held fixed, truncated at increasing lengths:
+    tokens   tuples   applied  two-sided  signs
+    50,000   10,014    98.50%    100.0%      60
+   100,000   20,022    83.11%     69.0%      98
+   200,000   40,050    65.88%     34.5%     139
+   300,002   60,068    60.11%     23.0%     189
+  At 50k tokens this stream PASSES V2. By 300k it is at 23%. Sign
+  production decelerates as the book thins, so V1 does not arrive either.
+  THE CONTROL THAT MAKES IT TRUSTWORTHY, run because this project has been
+  burned by exactly this before (the cold-start control proved an earlier
+  headline was the harness, not the model): the REAL BX token stream, same
+  warm start, same harness, same truncation -
+    tokens   tuples   applied  two-sided  signs
+    50,000   10,000    98.61%    100.0%      73
+   200,000   40,000    99.12%    100.0%     258
+   700,000  140,000    99.66%    100.0%     795
+ 1,068,774  213,754    99.77%    100.0%   1,844
+  The real stream IMPROVES with length and never leaves 100% two-sided. So
+  the decay is the MODEL's, the harness is exonerated, and - a second
+  result that comes free - the repaired shim is validated at day scale for
+  the first time: the real stream would pass all three criteria (1,844
+  signs, 100% two-sided, alive). The bar is reachable; this model does not
+  reach it.
+  WHAT THIS RETROSPECTIVELY INVALIDATES: every viability verdict in this
+  project's history was taken at short stream length, and short lengths
+  systematically FLATTER the model - at 50k tokens the model produces 60
+  signs against the real stream's 73, nearly indistinguishable. The
+  "5 of 8 keep the book alive" row (2026-07-31) and this session's own
+  60k-token comparison are both length artifacts. Viability must be
+  measured at day scale or not claimed.
+
+- 2026-08-03 THE ORDER-IDENTITY ABLATION IS INCONCLUSIVE, and is recorded
+  as inconclusive rather than written up as the confirmation it superficially
+  resembles. tools/ablate gained --mode noref (order identity dropped,
+  everything else exact; deliberately NOT folded into --mode all, which
+  prior RESULTS rows used). The control still reproduces the real column
+  exactly (kurt 106.96, tick ACF 0.503, slope -0.881, 1,866 signs), so the
+  harness is sound.
+  BOTH ATTEMPTS ARE DEGENERATE BY THIS PROJECT'S OWN RULE. Exact-price
+  resolution: n_tick 41,517 -> 2,031, vartop10 0.9966. Nearest-occupied-
+  level fallback (closer to what the shim does): n_tick 10,262, vartop10
+  0.8462. The measurability rule (2026-07-30 per-symbol restructure) calls
+  tick ACF UNMEASURED at vartop10 >= 0.5, so neither run can carry the
+  claim - the apparent collapse of clustering to ~0 is indistinguishable
+  from estimator degeneracy, which is precisely what that rule exists to
+  catch.
+  WHY IT LOOKS INTRINSIC, not tunable: dropping identity makes the
+  reconstructed book diverge from the real one, which makes later events
+  unresolvable, which guts the mid series the statistic needs. Skip
+  provenance at 38%: no-order 52,176, engine-reject 51,853, zero-qty 0 -
+  so half is events finding no order on the side and half is the engine
+  refusing an operation the diverged book cannot accept. You cannot drop
+  identity and keep the event stream intact, which means a single-variable
+  ablation may be the wrong instrument for this question.
+  CONSEQUENCE: the SECOND SCORED FACT REMAINS OPEN, and it blocks the seal
+  independently of the model. Settling it needs a different design, or a
+  dated Decision demoting persistence to a pipeline ceiling. Not tonight.
+
+- 2026-08-03 TEST WAS NOT RUN, and the authorisation was not exercised.
+  The user authorised the sealed run (2026-08-02) and tonight asked to go
+  all the way. It still did not run, because the PRIOR gate in that same
+  Decision fired: "if the model's stream is NOT VIABLE at 32k steps, there
+  is no LM column to compare and the TEST days would be unsealed for
+  nothing." Two independent blockers, either sufficient: the model is not
+  viable, and the second scored fact is unsettled. Spending a one-shot
+  irreversible read to produce a column with no model behind it is the one
+  thing the seal protocol exists to prevent. TEST remains sealed.
 
 ## Blocked on you
 Updated 2026-07-31. Each item states specifically what it needs from you.

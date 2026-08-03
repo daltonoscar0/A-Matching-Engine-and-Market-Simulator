@@ -955,3 +955,541 @@ one structural difference between the clean modes (clustering intact) and the
 full pipeline (clustering zero), and it is not a vocabulary property, so no
 rebuild addresses it. Testing it needs a ref-free ablation mode, not an
 argument.
+
+## 2026-08-03 KV-cached sampling: 4.68x, and what it costs in fidelity
+
+WHY. Training is finished and terminal; sampling was the remaining wall clock.
+The old sampler ran a full forward over all n_ctx=320 positions per generated
+token and discarded 319/320 of it. Measured first, on the real budget32k_v2
+config (M4/MPS, 227k params, batch 8): forward at T=320 = 16.65 ms, full step
+18.96 ms, 52.3 tok/s/stream. The V1 viability bar needs ~0.5M tokens/stream,
+so a 7-seed TEST pass was ~19 h of pure sampling.
+
+COST CURVE (batch 8, ms per forward) - the model is DISPATCH-bound, not
+FLOP-bound, which is what decided the design:
+  T=1: 2.02   T=8: 2.42   T=32: 2.27   T=64: 2.29   T=128: 2.28
+  T=256: 10.26   T=320: 15.07
+Cost is flat to T=128 and only bites past 256. Batch is nearly free at T=1
+(B=8: 2.96 ms, B=56: 3.73 ms, B=128: 4.83 ms) but linear at T=320
+(B=56: 101.8 ms). Consequence recorded for the TEST pass: at T=1 the 7 seeds
+x 8 streams could share one batch at almost no extra cost. NOT acted on -
+whether 7 batched streams satisfy the pre-registration's "exactly 7 seeds" is
+a methodology question for the user, not an optimisation.
+
+THE SEMANTIC CHANGE, stated before the speedup. MiniGPT has LEARNED ABSOLUTE
+position embeddings and the old sampler slid its window one token per step, so
+every cached key/value was invalidated every step: an exactly equivalent KV
+cache DOES NOT EXIST for this model. pylm/kvcache.py uses chunked refresh
+instead, so the model conditions on (n_ctx - stride)..n_ctx tokens of history
+rather than always n_ctx - at stride 64, 256..320, mean 288. Judged acceptable
+ONLY because the 2026-07-30 context-gate finding already showed n_ctx=320
+cannot express the scored fact (median requirement 294.5x context); a 10% cut
+to an already-inadequate window cannot move a scored-fact verdict. Revisit if
+the context ever grows.
+
+THROUGHPUT (20,000 tokens x 8 streams, real checkpoint, MPS)
+  mode              tok/s/stream   speedup
+  uncached              52.3         -
+  cached, stride 16    109.5       2.09x
+  cached, stride 64    244.9       4.68x
+  cached, stride 128   235.4       4.50x
+Stride 128 is NOT faster than 64 - the incremental step is the floor, not the
+refresh - so 64 is the default: same speed, more history. At batch 4 the
+speedup is 2.95x (80 -> 236 tok/s/stream); the gain grows with batch because
+the uncached arm is the one that scales with T.
+
+VERIFICATION - and note the standard is WEAKER than the 2026-07-31 fix, which
+was byte-identical. It cannot be byte-identical here: changing the conditioning
+context must change the stream. Four arms instead:
+ 1. EXACT, where exactness exists (pylm/test_kvcache.py, all green):
+    prefill == MiniGPT.forward, max |diff| 4.8e-7; teacher-forced cached step
+    == sliding-window forward across all pre-slide steps, 4.8e-7; prefill
+    fully resets cache state (bit-identical K cache vs a cold prefill);
+    post-refresh logits == uncached forward over the window the cache holds.
+ 2. PREDICTED DIVERGENCE POINT - the sharpest evidence. The window first moves
+    at token 320. On the real checkpoint, 8/8 streams are IDENTICAL to the
+    uncached stream over the first 319 tokens and first diverge at index 321.
+    A wrong cache diverges immediately.
+ 3. DISTRIBUTIONAL (160k tokens/mode): token-histogram total-variation
+    distance cached-vs-uncached 0.047-0.059, BELOW the uncached run's own
+    split-half noise floor 0.061 and below seed-to-seed 0.070.
+ 4. DOMAIN-LEVEL: sim_health warm-started, 4 streams/mode at 60k tokens.
+    Identical verdict 8/8 (NOT VIABLE; V1 FAIL, V3 pass; V2 passes on one
+    cached stream and on no uncached one).
+      uncached applied 56.7/76.8/49.3/48.2%, signs 40/33/31/21
+      cached   applied 66.1/98.7/58.1/51.0%, signs 37/56/40/40
+    HONEST LIMIT of arm 4: the within-mode seed spread is WIDER than the
+    between-mode difference, so at n=4 this shows no gross behavioural change
+    and nothing finer. Arm 3 carries the distributional claim. These are 60k
+    streams, so the V1 FAIL is a length artifact and says nothing about
+    viability at 0.5M - that measurement has still not been made.
+
+WHAT THIS DOES NOT FIX: sample.py still writes output only at the END of a run,
+so a kill still costs the whole run - the same defect that lost the 100k-token
+run on 2026-08-02. Exposure drops from ~4.2 h to ~1 h; the defect stands.
+
+## 2026-08-03 (follow-up) All 7 seeds in one batch: ~37 min, and the
+## unbounded MPS allocator growth that would have killed it
+
+AUTHORISED by the user after the KV-cache row above. Rationale measured there:
+at T=1 this model is dispatch-bound, so batch is nearly free (2.96 ms at B=8,
+3.73 ms at B=56) while the uncached path scales linearly with batch.
+
+KEEPING "EXACTLY 7 SEEDS" LITERALLY TRUE. The amended pre-registration fixes LM
+seeds at exactly 7. Batching could have silently become "56 streams from one
+seed", so each seed instead gets its own torch.Generator and draws its uniforms
+only from that generator, in an order independent of how many seeds share the
+batch. Seven distinct RNG streams sharing a forward pass, not one stream
+partitioned afterwards.
+  VERIFIED on the real checkpoint and device: seed 3 run ALONE at batch 8
+  reproduces seed 3's block inside the 56-row batch byte-for-byte on 7/8
+  streams over 20,002 tokens. The 8th is identical for 17,537 tokens, then
+  diverges - a floating-point tie-flip (batched matmul tiling differs at B=56
+  vs B=8, one near-boundary categorical draw resolves the other way, streams
+  decorrelate after it). Exact in logic, subject to GPU fp non-determinism
+  across batch shapes. Stated plainly rather than reported as "reproducible".
+
+SAMPLER RULE CHANGED. torch.multinomial takes one generator per call, so 7
+distinct seeds would need 7 calls/step (~3 ms each at batch 8 = ~21 ms, worse
+than the problem being solved). Replaced with inverse-CDF sampling from
+bulk-drawn per-seed uniforms: seed-separable AND cheaper than multinomial
+(0.36 ms vs 3.00 ms at batch 8). The sampling rule is not pre-registered (only
+temperature/top-k selection and the seed count are), so this is an
+implementation call. Gated: empirical-vs-target max error 0.0030 over 20k
+draws, plus a clamp gate (fp cumsum can land under 1.0, so a uniform above it
+would index past the vocabulary).
+
+THE BUG THIS UNCOVERED - it would have killed every TEST run. First 56-row
+attempt died EXIT 137 (SIGKILL). RSS was NOT the cause: it plateaued at
+~230 MB and the process was killed anyway. Instrumenting MPS memory:
+  tok=  500  mps_alloc=41.8MB  mps_driver= 1680MB
+  tok= 2000  mps_alloc=41.8MB  mps_driver= 4256MB
+  tok= 5000  mps_alloc=41.8MB  mps_driver= 9520MB
+  tok= 7500  mps_alloc=41.8MB  mps_driver=13776MB
+Live tensors flat at 41.8 MB; DRIVER-allocated memory linear at ~1.8 MB/token.
+Each prefill creates ~112 MB of transient tensors at batch 56 and the MPS
+caching allocator never reused them. On Apple Silicon that is unified memory -
+invisible in RSS, and jetsam takes the process. Projected ~900 GB over a
+500k-token run.
+  FIX: torch.mps.empty_cache() every N refreshes.
+    N= 1: driver 1240 MB, 10166 tok/s total
+    N= 8: driver 1696 MB,  9662 tok/s total   <- default
+    N=32: driver 2872 MB, 11869 tok/s total
+  (spread is contention noise, not an N effect). The 20k x 56 run that died
+  now completes.
+
+ATTRIBUTION, recorded because PLAN.md has blamed the machine for four prior
+kills: the machine WAS in the documented bad state during this session - data
+volume 98% full (5.2 GiB free), swap 4.16 of 5.12 GB used, and the user's
+`python3 -m edge.harness.run` at 112% CPU. That state is real and still costs
+throughput. It was NOT the cause of this kill. Blaming it would have hidden an
+unbounded allocator leak that reproduces on an idle machine.
+
+THROUGHPUT (real checkpoint, MPS, under contention)
+  configuration                              tok/s/stream   tok/s total
+  uncached, batch 8 (original)                    52.3           418
+  cached, batch 8                                244.9          1959
+  cached, 7 seeds x 8 = 56 rows, one batch       228.0         12794
+Projected 500k tokens x 56 streams: ~37 min, against ~18.6 h for 7 sequential
+uncached batch-8 runs (~30x). Measured while the edge job held 112% CPU, so an
+idle machine should beat it.
+
+STILL NOT FIXED: sample.py writes only at the END of a run. A kill still costs
+the whole run - now ~37 min of exposure instead of ~4.2 h.
+
+## 2026-08-03 VIABILITY, day-scale: NOT VIABLE 8/8 - and the failure is
+## CHARACTERISED, with the harness exonerated by control
+
+First viability measurement at long stream length on the repaired decoder.
+V1 (>= 500 collapsed signs) had never been testable at any length previously
+sampled; the KV cache and the CPU/MPS switch (this session's rows) made it reachable.
+Checkpoint budget32k_v2 (32,000 steps), warm-started from the real VAL book
+SPY 20190730 09:30, T=1.0, top-k 0, 8 streams.
+
+VERDICT at 400,002 tokens (80k tuples, ~2.7x any prior measurement):
+  stream  applied  two-sided  signs  book
+  s0        6.99%      0.1%     21   DEAD at tuple 9,743
+  s1        1.90%      0.4%      9   DEAD at tuple 1,703
+  s2       47.40%      1.2%    173   alive, one-sided
+  s3       56.60%     17.2%    236   alive, one-sided (best)
+  s4       54.05%     12.5%    208   alive, one-sided
+  s5       48.39%      0.9%    166   alive, one-sided
+  s6        3.15%      0.7%      1   DEAD at tuple 3,106
+  s7       47.39%      1.0%    149   alive, one-sided
+NOT VIABLE 8/8. Best two-sided 17.2% against a 90% bar; 3 of 8 books dead.
+
+THE FINDING - MONOTONIC DECAY IN STREAM LENGTH. One stream (s3, the BEST),
+everything else fixed, truncated at increasing lengths:
+   tokens   tuples   applied  two-sided  signs
+   50,000   10,014    98.50%    100.0%      60
+  100,000   20,022    83.11%     69.0%      98
+  200,000   40,050    65.88%     34.5%     139
+  300,002   60,068    60.11%     23.0%     189
+  400,002   80,087    56.60%     17.2%     236
+At 50k tokens this stream PASSES V2 outright. The decay is monotonic in every
+column, and sign production DECELERATES (60 -> 236 while tuples go 10k -> 80k,
+badly sublinear), so V1 does not arrive by waiting either. There is no stream
+length at which this model passes.
+
+THE CONTROL, run because this project has been burned by exactly this failure
+before - the 2026-07-31 cold-start control proved an earlier headline measured
+the HARNESS, not a model. Real BX token stream, SPY 20190730, identical warm
+start, identical harness, identical truncation:
+    tokens   tuples   applied  two-sided  signs
+    50,000   10,000    98.61%    100.0%      73
+   100,000   20,000    98.90%    100.0%     143
+   200,000   40,000    99.12%    100.0%     258
+   400,000   80,000    99.45%    100.0%     497
+   700,000  140,000    99.66%    100.0%     795
+ 1,068,774  213,754    99.77%    100.0%   1,844
+The real stream IMPROVES with length and never leaves 100% two-sided. Three
+consequences:
+ (1) THE HARNESS IS EXONERATED. The decay belongs to the model.
+ (2) THE BAR IS REACHABLE, and the REPAIRED SHIM IS VALIDATED AT DAY SCALE for
+     the first time: the real stream passes all three criteria (1,844 signs,
+     100% two-sided, alive throughout).
+ (3) EVERY PRIOR VIABILITY VERDICT IN THIS PROJECT IS A LENGTH ARTIFACT. Short
+     streams systematically flatter the model - at 50k tokens the model gives
+     60 signs against the real stream's 73, nearly indistinguishable. The
+     2026-07-31 "5 of 8 keep the book alive" row and this session's own
+     60k-token cached-vs-uncached comparison are both too short to mean what
+     they appeared to mean. Viability is a day-scale measurement or it is not
+     a measurement.
+
+HYPOTHESIS FOR THE MECHANISM, explicitly UNTESTED and recorded as the boring
+structural explanation before any interesting one: generation is OPEN-LOOP.
+sample.py feeds the model no book state, but PRICE_OFF is a level index
+RELATIVE TO THE BOOK and was computed from the real reconstructed book during
+training. At generation the model emits indices blind while the simulated book
+drifts from the model's implicit belief, so resolution errors compound - which
+is what the decay curve looks like, and it explains why the real stream (whose
+indices are consistent with the book they came from by construction) does not
+decay. If true, the failure is EXPOSURE BIAS, NOT UNDERTRAINING, and a longer
+or larger training run does not address it; the Phase 2 adapter already has the
+missing channel (top-N BookView feedback, AdapterConfig.feedback_levels) and
+the sampling path does not use it. DISCRIMINATING TEST, not run: re-synchronise
+the book to a real snapshot every N tuples mid-run; if applied% holds near 98%
+under periodic re-sync and decays without it, the diagnosis is confirmed and
+the fix is architectural rather than budgetary.
+
+SCOPE: this is one checkpoint at one budget (32,000 steps, ~90 min, the user's
+chosen limitation per the 2026-08-02 Decision) on VAL. It is evidence about
+what this budget and this open-loop sampling path buy. It is NOT evidence that
+the architecture cannot do better.
+
+TEST WAS NOT RUN. The 2026-08-02 authorisation carries a prior gate - "if the
+model's stream is NOT VIABLE at 32k steps, there is no LM column to compare and
+the TEST days would be unsealed for nothing" - and that gate fired. A second,
+independent blocker also stands: the second scored fact is unsettled (ablation
+row above). TEST remains sealed; 20181228 and 20200130 unread.
+
+## 2026-08-03 Device: CPU is 10.8x FASTER than MPS for this model
+
+Recorded separately because it is a correction to an unexamined default, not a
+tuning result. Anaconda (torch 2.9.1) was deleted while freeing disk; the
+project now runs on /usr/bin/python3 with torch 2.4.1, whose MPS dispatch is
+~200 us/op against 2.9.1's ~58 us/op. That prompted measuring the device
+choice for the first time.
+
+  configuration (batch 8, 227k-param budget32k_v2)   tok/s/stream
+  MPS, torch 2.4.1                                        65.4
+  MPS, torch 2.9.1 (deleted)                             244.9
+  CPU, torch 2.4.1                                       703.7
+  CPU, torch 2.4.1, batch 56                             184.4  (10,324 total)
+
+The model is 227k parameters - far too small to amortise GPU kernel dispatch -
+so the GPU was never the right device. Attention is not the bottleneck either
+(incremental SDPA 0.240 ms, manual matmul 0.182 ms at B=8/T=320); the cost is
+per-op dispatch across ~70 ops per token.
+
+STATED PLAINLY BECAUSE IT IS THE LESSON: every measurement in this project,
+including the KV-cache design work in the rows above, was taken on MPS because
+that is what training used and what the sampler defaulted to. THE DEVICE
+DEFAULT WAS WORTH MORE THAN THE ALGORITHM (10.8x vs the cache's 4.7x) and it
+was never questioned. The cache still earns its place - it is a
+device-independent win and the two compose - but the larger factor was sitting
+in an unexamined default the whole time.
+
+## 2026-08-03 Order-identity ablation: INCONCLUSIVE (degenerate by our own rule)
+
+The standing hypothesis (Step 9 row) was that the shim's lack of order identity
+- a cancel takes the FIFO head of a named level, not the order the real stream
+named - is what flattens tick-time volatility clustering to zero. Step 9 said
+testing it "needs a ref-free ablation mode, not an argument". tools/ablate
+gained --mode noref: identity dropped, prices/sizes/timestamps EXACT, so one
+variable moves. Deliberately NOT folded into --mode all, whose rows already
+exist.
+
+CONTROL STILL PASSES (mode none, SPY 20190730): kurt event 106.96, tick ACF
+lag1 0.503, 1s ACF 0.166, slope -0.881, 1,866 signs, 0 skipped - reproducing
+the Step 9 control, so the added code did not disturb the harness.
+
+  quantity           control   noref (exact px)   noref (nearest level)
+  tick ACF lag10      0.2553           -0.0032                  0.1093
+  tick ACF lag100     0.1525           -0.0027                 -0.0008
+  1s ACF(|r|)         0.1664           -0.0001                  0.4074
+  sign slope         -0.8810           -0.3890                 -0.1540
+  n_tick             41,517             2,031                  10,262
+  vartop10            0.1689            0.9966                  0.8462
+  events skipped           0    113,237 (41%)           104,029 (38%)
+
+BOTH VARIANTS ARE UNMEASURED BY THIS PROJECT'S OWN RULE (2026-07-30 per-symbol
+restructure: tick ACF is UNMEASURED at vartop10 >= 0.5). The apparent collapse
+of clustering to ~0 is therefore INDISTINGUISHABLE FROM ESTIMATOR DEGENERACY,
+which is exactly what that rule exists to catch. Reported as inconclusive
+rather than as the confirmation it superficially resembles.
+
+WHY THE DEGENERACY LOOKS INTRINSIC rather than tunable: dropping identity makes
+the reconstructed book diverge from the real one, which makes later events
+unresolvable, which guts the mid series the statistic is computed on. Skip
+provenance at 38%: no-order 52,176, engine-reject 51,853, zero-qty 0 - half the
+loss is events finding no order on that side, half is the engine refusing an
+operation the diverged book cannot accept. You cannot drop identity and keep
+the event stream intact, so a single-variable ablation may be the wrong
+instrument for this question.
+
+CONSEQUENCE: the SECOND SCORED FACT (tick-time volatility-clustering
+persistence, ratified 2026-07-30) REMAINS OPEN and blocks the seal
+independently of the model. Settling it needs a different design, or a dated
+Decision demoting persistence to a pipeline ceiling.
+
+## 2026-08-03 CORRECTION: the open-loop hypothesis is REFUTED in its strong
+## form. This row corrects the "HYPOTHESIS FOR THE MECHANISM" paragraph of the
+## "VIABILITY, day-scale: NOT VIABLE 8/8" row above.
+
+WHAT THE EARLIER ROW CLAIMED, and it was stated too confidently: that
+generation being open-loop (sample.py feeds the model no book state, while
+PRICE_OFF is a level index relative to the book) makes resolution errors
+compound, and therefore "the failure is EXPOSURE BIAS, NOT UNDERTRAINING, and
+a longer or larger training run does not address it." The discriminating test
+named in that row was run immediately and does NOT support it.
+
+THE TEST, which needed no new code: cut one stream (s3) into consecutive 50k
+slices and replay each from a FRESH real warm-start book. If the model's tokens
+were fine and only the drifted simulated book were at fault, every slice would
+score like the first.
+
+  slice (tokens)     applied  two-sided  signs
+       2-50,002       98.49%     100.0%     60
+  50,002-100,002      66.94%      37.0%     38
+ 100,002-150,002      52.61%       4.0%     26
+ 150,002-200,002      79.23%      61.0%     49
+ 200,002-250,002      13.47%       7.0%      8
+ 250,002-300,002      49.74%       4.0%     17
+ 300,002-350,002      98.45%     100.0%     38
+ 350,002-400,002      15.12%       8.0%      7
+
+A fresh healthy book does NOT rescue most slices, so book drift is not the
+whole mechanism and the strong hypothesis is dead. The claim that retraining
+cannot help is WITHDRAWN - it was not established, and nothing here rules
+undertraining in or out.
+
+WHAT THE DATA DOES SHOW - INTERMITTENCY, not monotonic token degradation. The
+slice at 300,002-350,002 scores 98.45% applied / 100% two-sided, as good as the
+opening slice, at token 350k. The model can still emit real-quality flow deep
+into a stream; it does not SUSTAIN it. Local quality oscillates between 13% and
+98% within a single stream.
+
+HOW THAT RECONCILES WITH THE MONOTONIC FULL-STREAM DECAY, using a mechanism
+already on record (2026-07-31 Step 2: level destruction is unrestricted while
+creation happens only at the touch, so depth ratchets down and never rebuilds):
+book damage is ONE-WAY. A bad stretch permanently thins the book; a good
+stretch cannot rebuild it. So the full-stream curve decays monotonically even
+though local token quality oscillates. The decay is the integral of the damage,
+not a trend in the tokens.
+
+CAVEAT, stated so the slice table is not over-read: the test conflates token
+quality with mismatch between the model's implicit book state and the fresh
+real book, because PRICE_OFF is RELATIVE - tokens generated for a thin drifted
+book need not apply cleanly to a rich real one. It therefore refutes the strong
+open-loop hypothesis cleanly, but does NOT establish "token quality degrades".
+The unambiguous, confound-free signal is the VARIANCE across slices of one
+stream.
+
+STATUS OF THE MECHANISM QUESTION: open. What is now established is (a) the
+decay is real and monotonic at full-stream scale, (b) the harness is not the
+cause, and (c) local token quality is intermittent rather than monotonically
+degrading. Which of undertraining, open-loop sampling, or the one-way book
+ratchet dominates is NOT settled by anything measured tonight.
+
+## 2026-08-03 MECHANISM: the model's PRICE_OFF distribution is touch-
+## concentrated from the FIRST slice - depth is never supplied
+
+Follow-up to the refuted open-loop hypothesis (row above). Two alignment-free
+distributional tests on stream s3, per 50k-token slice, against the real SPY
+20190730 token stream.
+
+TEST 1 - TYPE MIX. RULES OUT the obvious "the model emits destructive flow"
+explanation:
+  real                     ADD 0.498  CANCEL+DELETE 0.489  ADD/DEST 1.018
+  model, best slice (98.5% applied)  ADD 0.497  CAN+DEL 0.495  ADD/DEST 1.004
+  model, worst slice (13.5% applied) ADD 0.498  CAN+DEL 0.496  ADD/DEST 1.004
+The mix is stable across every slice and close to real; the best and worst
+slices are INDISTINGUISHABLE on it. The model has learned WHAT to do. Note one
+small systematic gap: real is net constructive (ADD/DEST 1.018), the model is
+net neutral-to-destructive (0.974-1.005). Against an irreversible ratchet even
+a ~2-point deficit drains the book over 80k tuples, so this is not nothing -
+but it does not explain the slice variance.
+
+TEST 2 - PRICE_OFF. THIS IS THE DEFICIENCY:
+  real         PX-1 0.093  PX+0 0.254  PX+1 0.064  PX+3 0.120  PX+6 0.112
+  model sl.0   PX-1 0.212  PX+0 0.465  PX+1 0.095   (deep levels starved)
+  model sl.6   PX-1 0.277  PX+0 0.431  PX+1 0.120
+Across every slice the model puts ~65-75% of its mass at the touch (PX+0) and
+inside the spread (PX-1) - about DOUBLE real - while real flow places ~40% of
+its activity on PX+3..PX+8, which the model barely touches.
+
+THE CONTROL THAT MAKES THIS CAUSAL RATHER THAN CONSEQUENTIAL: the bias is
+already present in SLICE 0, the first 50k tokens, when the book is healthy and
+98.49% of tuples apply. So it is NOT an artifact of the model conditioning on
+an already-thin book - the model learned a touch-concentrated distribution and
+the decay follows from it, not the other way round. Combined with the one-way
+ratchet on record (2026-07-31 Step 2: creation only at the touch, destruction
+unrestricted), cancels strip depth that adds never replace.
+
+WHAT THIS DOES NOT EXPLAIN, stated so the row is not over-read: TV distance to
+the real PRICE_OFF distribution is 0.31-0.44 in EVERY slice and does NOT track
+applied% - the 98.45%-applied slice has TV 0.4287, among the WORST, while the
+52.6% slice has the LOWEST at 0.3101. These marginals account for the monotonic
+DECAY; they do not account for the slice-to-slice VARIANCE in applied%, which
+must live in sequence-level or book-interaction effects not measured here.
+
+CONSEQUENCE for the next move: this is a concrete, learnable deficiency in the
+emitted distribution, which is the kind of thing more or better training can
+plausibly address - consistent with the withdrawal of the "retraining cannot
+help" claim in the correction row above. It also suggests a cheaper diagnostic
+than a retrain: check whether the TRAINING corpus itself is touch-concentrated
+(a tokenizer/ingest property) before concluding the model failed to learn it.
+
+## 2026-08-03 CORRECTION 2: the PRICE_OFF mechanism row is WITHDRAWN. The
+## model matches its TRAINING distribution; VAL is the outlier.
+
+This corrects the row above titled "MECHANISM: the model's PRICE_OFF
+distribution is touch-concentrated from the FIRST slice". That row compared the
+model against the VAL day and concluded the model had learned a wrong,
+touch-concentrated distribution. The check that row itself recommended -
+"check whether the TRAINING corpus is touch-concentrated before concluding the
+model failed to learn it" - was run immediately and OVERTURNED it.
+
+                    -1     +0     +1     +2     +3     +4     +6    TAIL
+  TRAIN pooled   0.180  0.406  0.079  0.055  0.062  0.054  0.032   0.019
+  MODEL slice0   0.212  0.465  0.095  0.044  0.039  0.050  0.016   0.002
+  VAL            0.093  0.254  0.064  0.070  0.120  0.087  0.112   0.013
+
+  TV(model, TRAIN pooled) = 0.1073
+  TV(VAL,   TRAIN pooled) = 0.2718
+
+The model REPRODUCES ITS TRAINING DISTRIBUTION well. VAL deviates from TRAIN
+2.5x MORE than the model does, and VAL's PX+0 of 0.254 lies OUTSIDE the range
+of all six TRAIN days (0.315 [20191030] .. 0.558 [20191230]). The
+touch-concentration is a property of the TRAIN CORPUS, not a model defect.
+
+AND THE MARGINAL IS NOT THE MECHANISM AT ALL. Real TRAIN token stream, SPY
+20191230 - the MOST touch-concentrated day in the corpus, PX+0 0.558, well
+beyond the model's 0.465 - replayed from its own TRAIN warm book:
+    tokens   applied  two-sided  signs
+    50,000    99.55%     100.0%      54
+   200,000    99.51%     100.0%     349
+   700,000    99.69%     100.0%   1,504
+ 2,975,849    99.90%     100.0%   4,137
+Fully viable at day scale. So a touch-concentrated PRICE_OFF marginal does NOT
+cause book decay, and the model's marginal cannot be the explanation.
+
+NET RESULT OF BOTH CORRECTIONS - two candidate mechanisms ELIMINATED BY
+MEASUREMENT rather than argued about:
+  - NOT the TYPE mix (matches real; best and worst slices indistinguishable).
+  - NOT the PRICE_OFF marginal (matches TRAIN; real flow with a MORE extreme
+    marginal is viable at 2.98M tokens).
+  - NOT the harness (real streams pass on both VAL and TRAIN days at day
+    scale).
+  - NOT book drift alone (fresh-book slice replay does not rescue most slices).
+What remains, and is NOT measured: the CONDITIONAL structure - which action at
+which level GIVEN the current book, and the sequence-level dependence that
+first-order marginals cannot see. That is where the failure lives.
+
+A SEPARATE FINDING worth its own attention, surfaced by this check: TRAIN and
+VAL differ sharply on PRICE_OFF (TV 0.272), with VAL outside the TRAIN range
+entirely, and the six TRAIN days themselves span PX+0 0.315-0.558. The split's
+days are far from exchangeable on this statistic. If the TEST days differ from
+TRAIN as much as VAL does, the headline comparison would be scoring a model on
+a distribution it never saw - which is a question about the SPLIT, not the
+model, and it is better asked before the seal is broken than after.
+
+## 2026-08-03 Addendum to CORRECTION 2: day-to-day heterogeneity, and the
+## model is MORE typical of TRAIN than most real days are
+
+Leave-one-out test, SPY PRICE_OFF distribution: for each of the 7 TRAIN+VAL
+days, TV distance between that day and the pool of the OTHER six. This is what
+a held-out day actually looks like, and it needs no unsealing (TEST days were
+never tokenized, so TEST itself cannot be characterised this way).
+
+       day  split   TV vs pool-of-others   PX+0
+  20190130  TRAIN                 0.0818  0.369
+  20190327  TRAIN                 0.1098  0.380
+  20191030  TRAIN                 0.1456  0.315
+  20190530  TRAIN                 0.1515  0.382
+  20190830  TRAIN                 0.1593  0.430
+  20190730    VAL                 0.2718  0.254
+  20191230  TRAIN                 0.2877  0.558
+  min 0.0818  median 0.1515  max 0.2877;  VAL ranks 6 of 7.
+
+TWO THINGS FOLLOW.
+ (1) VAL is atypical but NOT anomalous - a TRAIN day (20191230) is further from
+     its peers than VAL is. The earlier framing of VAL as "the outlier" was
+     directionally right but overstated: the whole panel is heterogeneous.
+ (2) THE DECISIVE NUMBER: the MODEL's TV to the TRAIN pool is 0.1073, BELOW the
+     median real day's leave-one-out distance of 0.1515. On this statistic the
+     model is MORE typical of TRAIN than most real days are - and it is still
+     NOT VIABLE, while every real day tested is viable at day scale. The
+     PRICE_OFF marginal is definitively not the explanation.
+
+CONSEQUENCE FOR THE PRE-REGISTRATION, recorded as a question rather than a
+change: with real day-to-day TV up to 0.288 on this statistic, the "real"
+column is itself a high-variance draw, and the headline comparison scores
+2 TEST days against a TRAIN-fit model and a TRAIN-fit null. The pre-registration
+already scores per day and refuses to pool (section b), which is the right
+instinct; what is NOT addressed is that a single day's marginal can sit 0.29
+from the pool it was drawn from. Whether that is within the tolerance the
+scoring rule assumes is a question for the user BEFORE the seal is broken.
+
+## 2026-08-03 FINAL: day-scale viability, 1,070,002 tokens x 8 streams
+
+Completes the "VIABILITY, day-scale" row above, which recorded the verdict at
+400k tokens and flagged the full run as still generating. 34.1 min on CPU
+(523 tok/s/stream, 4,184 total) - the run the pre-KV-cache sampler would have
+taken ~4.5 hours to produce, and which no earlier session ever produced at all.
+
+  stream  tuples   applied  two-sided  signs  V1    V2    V3    book
+  s0      214,269    2.97%      0.0%     21  FAIL  FAIL  FAIL  DEAD @ 9,743
+  s1      214,268    1.04%      0.1%      9  FAIL  FAIL  FAIL  DEAD @ 1,703
+  s2      214,229   46.55%      0.5%    442  FAIL  FAIL  pass  alive
+  s3      214,274   50.77%      6.4%    536  PASS  FAIL  pass  alive
+  s4      214,288   49.30%      4.7%    454  FAIL  FAIL  pass  alive
+  s5      214,238   47.05%      0.3%    385  FAIL  FAIL  pass  alive
+  s6      214,252    1.51%      0.3%      1  FAIL  FAIL  FAIL  DEAD @ 3,106
+  s7      214,254   46.52%      0.4%    366  FAIL  FAIL  pass  alive
+NOT VIABLE 8/8.
+
+V1 PASSES FOR THE FIRST TIME IN THIS PROJECT'S HISTORY (s3, 536 collapsed signs
+>= 500). The bar was never unreachable - it was never TESTED, because it needs
+~0.5M+ tokens per stream and no run before tonight had them. Four more streams
+land in 366-454, just short. That vindicates the pre-registered V1 threshold as
+calibrated rather than arbitrary, and it retires the "V1 is not testable"
+caveat that has stood since 2026-07-31.
+
+V2 IS THE DECISIVE FAILURE AND IT WORSENS WITH LENGTH - the best stream's
+two-sided fraction fell from 17.2% at 400k tokens to 6.4% at day scale. Full
+curve for s3, one stream, everything else fixed:
+    tokens   applied  two-sided  signs
+    50,000    98.50%     100.0%     60
+   100,000    83.11%      69.0%     98
+   200,000    65.88%      34.5%    139
+   300,002    60.11%      23.0%    189
+   400,002    56.60%      17.2%    236
+ 1,070,002    50.77%       6.4%    536
+Monotonic in applied and two-sided across five and a half doublings. The model
+generates enough ACTIVITY at day scale (V1 passes) but cannot maintain a
+TWO-SIDED book, and the gap widens the longer it runs.
+
+Against the real column measured identically: VAL real 99.77% applied / 100%
+two-sided / 1,844 signs; TRAIN real (20191230) 99.90% / 100% / 4,137 signs.

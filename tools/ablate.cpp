@@ -20,10 +20,24 @@
 //                 PRICE_OFF cannot express an interior level, and this is
 //                 exactly that loss, with everything else exact.
 //   --mode all    every quantization at once; should approach the Step 8 row.
+//   --mode noref  ORDER IDENTITY DROPPED, everything else exact: a cancel /
+//                 delete / execute takes the FIFO HEAD of the level the real
+//                 event named, not the order it named. Prices, sizes and
+//                 timestamps stay exact, so this isolates ONE variable.
+//                 Added 2026-08-03 to test the standing hypothesis in
+//                 RESULTS.md: every other mode keeps exact refs, and only the
+//                 generation path does not, so if losing identity alone
+//                 flattens tick-time volatility clustering then the loss is
+//                 structural to the shim and NOT a vocabulary property - no
+//                 corpus rebuild can address it. The level is resolved by the
+//                 event's EXACT price, deliberately: resolving by PRICE_OFF
+//                 index instead would confound identity loss with price
+//                 quantization, which --mode pxadd already measures.
 //
-// Non-Add events keep their exact ref, so cancels/executes still resolve; a
-// distorted size is clamped to the standing order's remaining shares and the
-// clamp is COUNTED and printed rather than hidden.
+// Non-Add events keep their exact ref (EXCEPT under --mode noref, whose whole
+// point is that they do not), so cancels/executes still resolve; a distorted
+// size is clamped to the standing order's remaining shares and the clamp is
+// COUNTED and printed rather than hidden.
 //
 // Usage:
 //   ablate <itch_day> --ticker T --manifest M --mode M --out FILE
@@ -73,6 +87,34 @@ void put_directory(std::vector<uint8_t>& buf, uint16_t locate,
     buf.insert(buf.end(), body, body + sizeof(body));
 }
 
+// The shim owns no order identity: it can name a LEVEL but not an order, so
+// a cancel takes whatever is at the front of that level's queue. Book exposes
+// levels read-only via for_each_level, which is enough to model exactly that.
+// NEAREST occupied level on that side, not the exact price. The exact-price
+// version was tried first and was DEGENERATE: once refs move the book
+// diverges, so a cancel names a level that no longer exists, and skipping
+// those dropped 113,237 of 273,078 events (41%). That gutted the mid series
+// (n_tick 41,517 -> 2,031, vartop10 0.169 -> 0.9966), which is UNMEASURED by
+// the project's own rule - the tick ACF collapse it appeared to show was
+// indistinguishable from estimator degeneracy. Falling back to the nearest
+// occupied level keeps the event stream intact AND is closer to the shim,
+// which resolves by nearest-achievable-index rather than rejecting.
+const lob::Order* fifo_head_at(const lob::Book& b, lob::Side side,
+                               uint32_t price) {
+    const lob::Order* head = nullptr;
+    const lob::Order* best = nullptr;
+    uint64_t best_d = UINT64_MAX;
+    b.for_each_level([&](lob::Side s, const lob::Level& lvl) {
+        if (s != side || lvl.head == nullptr) return true;
+        if (lvl.price == price) { head = lvl.head; return false; }
+        const uint64_t d = lvl.price > price ? lvl.price - price
+                                             : price - lvl.price;
+        if (d < best_d) { best_d = d; best = lvl.head; }
+        return true;
+    });
+    return head ? head : best;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -99,13 +141,17 @@ int main(int argc, char** argv) {
     if (!day_path || ticker.empty() || manifest_path.empty() || out_path.empty()) {
         std::fprintf(stderr,
                      "usage: ablate <itch_day> --ticker T --manifest M "
-                     "--mode none|dt|size|pxadd|all --out FILE\n");
+                     "--mode none|dt|size|pxadd|all|noref --out FILE\n");
         return 2;
     }
     const bool q_dt    = mode == "dt"    || mode == "all";
     const bool q_size  = mode == "size"  || mode == "all";
     const bool q_pxadd = mode == "pxadd" || mode == "all";
-    if (mode != "none" && !q_dt && !q_size && !q_pxadd) {
+    // noref is deliberately NOT part of "all": "all" names the quantizations,
+    // and prior RESULTS rows were produced with it. Folding a new distortion
+    // into an existing mode would silently re-date those rows.
+    const bool q_noref = mode == "noref";
+    if (mode != "none" && !q_dt && !q_size && !q_pxadd && !q_noref) {
         std::fprintf(stderr, "unknown --mode %s\n", mode.c_str());
         return 2;
     }
@@ -157,6 +203,9 @@ int main(int argc, char** argv) {
     bool have_clock = false;
     uint64_t match_seq = 1;
     uint64_t emitted = 0, skipped = 0, clamped = 0, px_moved = 0;
+    uint64_t ref_moved = 0;  // noref: events that hit a DIFFERENT order
+    // Skip provenance: a 38% skip rate is only interpretable if we know WHY.
+    uint64_t sk_noorder = 0, sk_zero = 0, sk_reject = 0;
 
     for (const ingest::Event& e : res.events) {
         const lob::Side side = e.direction > 0 ? lob::Side::Buy : lob::Side::Sell;
@@ -216,7 +265,7 @@ int main(int argc, char** argv) {
         bool have_msg = false;
         switch (e.type) {
             case oftk::MsgType::Add: {
-                if (size == 0 || price == 0) { ++skipped; continue; }
+                if (size == 0 || price == 0) { ++skipped; ++sk_zero; continue; }
                 r = book.add(e.ref, side, size, price);
                 if (r == lob::Result::Ok) {
                     itch::AddOrder ad;
@@ -229,42 +278,55 @@ int main(int argc, char** argv) {
                 break;
             }
             case oftk::MsgType::PartialCancel: {
-                const lob::Order* o = book.find(e.ref);
-                if (!o) { ++skipped; continue; }
+                const lob::Order* o = q_noref
+                        ? fifo_head_at(book, side, e.price)
+                        : book.find(e.ref);
+                if (!o) { ++skipped; ++sk_noorder; continue; }
+                const uint64_t ref = o->ref;
+                if (q_noref && ref != e.ref) ++ref_moved;
                 uint32_t sh = size;
                 if (sh > o->shares) { sh = o->shares; ++clamped; }
-                if (sh == 0) { ++skipped; continue; }
-                r = book.cancel(e.ref, sh);
+                if (sh == 0) { ++skipped; ++sk_zero; continue; }
+                r = book.cancel(ref, sh);
                 if (r == lob::Result::Ok) {
                     itch::OrderCancel oc;
                     oc.h.stock_locate = locate; oc.h.timestamp = ts;
-                    oc.order_ref = e.ref; oc.shares = sh;
+                    oc.order_ref = ref; oc.shares = sh;
                     msg = oc; have_msg = true;
                 }
                 break;
             }
             case oftk::MsgType::Delete: {
-                if (!book.find(e.ref)) { ++skipped; continue; }
-                r = book.remove(e.ref);
+                const lob::Order* o = q_noref
+                        ? fifo_head_at(book, side, e.price)
+                        : book.find(e.ref);
+                if (!o) { ++skipped; ++sk_noorder; continue; }
+                const uint64_t ref = o->ref;
+                if (q_noref && ref != e.ref) ++ref_moved;
+                r = book.remove(ref);
                 if (r == lob::Result::Ok) {
                     itch::OrderDelete od;
                     od.h.stock_locate = locate; od.h.timestamp = ts;
-                    od.order_ref = e.ref;
+                    od.order_ref = ref;
                     msg = od; have_msg = true;
                 }
                 break;
             }
             case oftk::MsgType::ExecVisible: {
-                const lob::Order* o = book.find(e.ref);
-                if (!o) { ++skipped; continue; }
+                const lob::Order* o = q_noref
+                        ? fifo_head_at(book, side, e.price)
+                        : book.find(e.ref);
+                if (!o) { ++skipped; ++sk_noorder; continue; }
+                const uint64_t ref = o->ref;
+                if (q_noref && ref != e.ref) ++ref_moved;
                 uint32_t sh = size;
                 if (sh > o->shares) { sh = o->shares; ++clamped; }
-                if (sh == 0) { ++skipped; continue; }
-                r = book.execute(e.ref, sh);
+                if (sh == 0) { ++skipped; ++sk_zero; continue; }
+                r = book.execute(ref, sh);
                 if (r == lob::Result::Ok) {
                     itch::OrderExecuted oe;
                     oe.h.stock_locate = locate; oe.h.timestamp = ts;
-                    oe.order_ref = e.ref; oe.shares = sh;
+                    oe.order_ref = ref; oe.shares = sh;
                     oe.match_num = match_seq++;
                     msg = oe; have_msg = true;
                 }
@@ -272,14 +334,18 @@ int main(int argc, char** argv) {
             }
             default: ++skipped; continue;
         }
-        if (r != lob::Result::Ok || !have_msg) { ++skipped; continue; }
+        if (r != lob::Result::Ok || !have_msg) { ++skipped; ++sk_reject; continue; }
         itch::encode_framed(msg, out_buf);
         ++emitted;
     }
 
     std::printf("emitted %" PRIu64 " msgs, skipped %" PRIu64 ", size-clamped %"
-                PRIu64 ", add prices moved %" PRIu64 "\n",
-                emitted, skipped, clamped, px_moved);
+                PRIu64 ", add prices moved %" PRIu64 ", refs moved %" PRIu64
+                "\n", emitted, skipped, clamped, px_moved, ref_moved);
+    if (skipped)
+        std::printf("  skip provenance: no-order %" PRIu64 ", zero-qty %"
+                    PRIu64 ", engine-reject %" PRIu64 "\n",
+                    sk_noorder, sk_zero, sk_reject);
 
     // ---- self-verification ------------------------------------------------
     {
