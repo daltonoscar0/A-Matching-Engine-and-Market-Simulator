@@ -5,7 +5,7 @@ document. The deliverable is the per-item scope verdict so the direction can
 be chosen deliberately, not discovered mid-implementation.
 
 **Update 2026-07-30: the `U` fork is RESOLVED — EXPAND to Delete+Add**
-(user's decision, recorded in PLAN.md Decisions with the replace-atomicity
+(decision recorded in PLAN.md Decisions with the replace-atomicity
 caveat and the post-hoc replace-atomicity-rate sanity check). Do not reopen;
 revisit `TYPE_REPLACE` with a six-field tuple only if replace-timing fidelity
 later matters for a specific probe.
@@ -139,7 +139,7 @@ must **learn** replace-atomicity (a `DT_ZERO` delete followed by a `DT_ZERO`
 same-side add), so post-hoc measure how often it emits that pattern vs.
 reality; if replace-timing fidelity ever turns out to matter for a specific
 probe, revisit `TYPE_REPLACE` with an explicit six-field tuple then.
-**Decided by the user 2026-07-30: EXPAND** (PLAN.md Decisions); the caveat
+**Decided 2026-07-30: EXPAND** (PLAN.md Decisions); the caveat
 above is logged there, and the replace-atomicity rate is on the amended
 pre-registration's sanity-check list, explicitly not a scoring criterion.
 

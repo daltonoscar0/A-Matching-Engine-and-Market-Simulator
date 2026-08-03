@@ -210,7 +210,7 @@ way - with TEST unspent and available to a future model. See docs/CLAIM.md.
 - ALSO UNRESOLVED, and it should be settled before any future seal: the
   split is not exchangeable on PRICE_OFF (leave-one-out TV 0.082-0.288
   across TRAIN+VAL; VAL outside the TRAIN range entirely).
-- Read this cold (2026-08-02, session ended by the user to resume tomorrow).
+- Read this cold (2026-08-02, session ended to resume tomorrow).
   SUPERSEDES the 2026-07-31 status below, which is kept for the record.
 - THE BUDGET TRAINING RUN IS DONE. 32,000 steps, VAL held-out 0.9249,
   train-sample 0.9045, gap +0.0204 (out/tokens/run32k/budget32k_v2.pt).
@@ -233,7 +233,7 @@ way - with TEST unspent and available to a future model. See docs/CLAIM.md.
   rests on evidence. Leading hypothesis for the real cause, UNTESTED: the
   shim has no order identity, so a cancel takes a level's FIFO head rather
   than the order the real stream cancelled.
-- WHERE IT STOPPED: sampling from the 32k checkpoint, killed by the user at
+- WHERE IT STOPPED: sampling from the 32k checkpoint, killed at
   100,000 of 500,000 tokens. sample.py writes only at the END, so nothing
   was kept - a restart starts over. Throughput 33 steps/s => ~4.2 h for
   500k x 8 streams. RESTART COMMAND:
@@ -248,7 +248,7 @@ way - with TEST unspent and available to a future model. See docs/CLAIM.md.
   2. The LM column: build/lm_sim on the sampled tokens -> build/stylized,
      then the real vs LM vs null table. Score on flow-sign memory ONLY;
      report volatility clustering as a pipeline ceiling, not a model result.
-  3. The sealed TEST run on {20181228, 20200130} - AUTHORISED by the user
+  3. The sealed TEST run on {20181228, 20200130} - AUTHORISED
      2026-08-02, but LAST, and it goes back to them if the stream is not
      viable (see the Decision).
 - TWO THINGS FOR THE USER, both raised and neither actioned: the LM column
@@ -277,8 +277,8 @@ way - with TEST unspent and available to a future model. See docs/CLAIM.md.
   time. V2 (two-sided >= 90%) is the real model failure: the book grows
   one-sided. V1 (>= 500 signs) is NOT TESTABLE at the stream lengths ever
   sampled - it needs ~0.5M+ tokens per stream and has never had them.
-- TWO THINGS BLOCK EVERYTHING DOWNSTREAM, both needing you (details in
-  Blocked on you): (1) the training run has now been killed THREE times,
+- TWO THINGS BLOCK EVERYTHING DOWNSTREAM, both still open (details in
+  Open decisions): (1) the training run has now been killed THREE times,
   and the cause is diagnosed - memory pressure with 379 MiB of free disk
   and no room to grow swap, not a deliberate stop; (2) the shim has a
   NAMED STRUCTURAL DEFECT that caps what any model can achieve through it
@@ -287,11 +287,11 @@ way - with TEST unspent and available to a future model. See docs/CLAIM.md.
 - THE SEALED RUN MUST NOT BE SCHEDULED. Nothing about TEST changed; TEST
   was not read this session, not with the override.
 - Next 3 tasks:
-  1. Decide the shim-defect question (Blocked on you 5). Until then a
+  1. Decide the shim-defect question (Open decisions, item 5). Until then a
      viability verdict on any model is bounded by a harness ceiling.
   2. Complete a budget training run on a machine with headroom - it needs
-     the machine to ITSELF plus disk, not a different venue (Blocked on
-     you 1b). Resume support does not exist yet: train_corpus.py always
+     the machine to ITSELF plus disk, not a different venue (Open
+     decisions, item 1b). Resume support does not exist yet: train_corpus.py always
      starts from scratch, so a fourth kill costs everything again.
   3. Then viability warm-started at ~0.5M tokens/stream (so V1 is
      testable), and - only if viable - the VAL-only sampling sweep
@@ -540,7 +540,7 @@ way - with TEST unspent and available to a future model. See docs/CLAIM.md.
   the task but absent from the repo; implemented from the published model
   (Cont, Stoikov, Talreja 2010, "A stochastic model for order book
   dynamics", Operations Research 58(3)) - noted, not blocking.
-  Pre-registered interpretation rule (fixed by the user BEFORE the run,
+  Pre-registered interpretation rule (fixed BEFORE the run,
   restated here before results existed): if CST's flow-sign log-log decay
   slope is materially different from -0.6 (steeper than -0.9 or near
   zero), the slope discriminates and the null's value is the floor a
@@ -619,7 +619,7 @@ way - with TEST unspent and available to a future model. See docs/CLAIM.md.
   What does NOT transfer: the LOBSTER-SPY trained weights and frozen bins - BX
   is a different distribution, so Phase 3's LM column is a from-scratch BX
   run. NOT starting the tokenizer change this session; the audit is the
-  deliverable, direction is the user's to pick.
+  deliverable; the direction is still to pick.
 
 - 2026-07-30 (adapter) State-feedback shape: the model conditions on the
   top-N aggregated levels per side (price + total shares) plus best bid/ask
@@ -752,10 +752,10 @@ way - with TEST unspent and available to a future model. See docs/CLAIM.md.
   add; retrain is required either way (bins refit). Recommendation logged in
   docs/FORMAT_RECONCILIATION.md: EXPAND to Delete+Add; revisit TYPE_REPLACE
   with a 6-field tuple only if replace-timing fidelity later matters for a
-  probe. Direction is the user's; not implemented.
+  probe. Direction still open; not implemented.
 
 - 2026-07-30 (Step 2, ratification) TICK-TIME VOLATILITY-CLUSTERING
-  PERSISTENCE is RATIFIED by the user as the SECOND SCORED FACT of the
+  PERSISTENCE is RATIFIED as the SECOND SCORED FACT of the
   headline comparison, upgrading it from the conditional status in the
   2026-07-30 pre-registration (c). Gate check first: the ratification was
   explicitly conditioned on the vartop10 sample-size confound resolving
@@ -908,7 +908,7 @@ way - with TEST unspent and available to a future model. See docs/CLAIM.md.
      bounce sign - never scoring criteria; gross basic-validity failures
      noted separately; passing earns nothing.
 
-- 2026-07-30 (U fork DECIDED, user's call) EXPAND 'U' to Delete+Add in the
+- 2026-07-30 (U fork DECIDED) EXPAND 'U' to Delete+Add in the
   ITCH-driving adapter. The tuple-structure argument settles it: a replace
   carries TWO locations (the original order and the new price) against the
   tuple's ONE PRICE_OFF slot, so TYPE_REPLACE would force a sixth field -
@@ -947,7 +947,7 @@ way - with TEST unspent and available to a future model. See docs/CLAIM.md.
   320-token context typically holds ZERO complete prior signs. Per the
   run's standing order: NO fix is proposed here - no new n_ctx, no
   tokenization change, no pre-registration amendment. The architecture
-  decision is the user's (see Blocked on you). Work continued to the
+  decision is still open (see Open decisions). Work continued to the
   phases that are needed whatever context length is chosen.
 
 - 2026-07-30 (tape reconciliation) DETERMINATION: ~/orderflow-lm and
@@ -964,7 +964,7 @@ way - with TEST unspent and available to a future model. See docs/CLAIM.md.
   text-corpus demo). The local repo is authoritative for exactly one
   thing: unique commit d8b15cc "SPEC: split-guard requirement for the
   future ITCH ingest", absent from the remote (remote SPEC.md has no
-  dataset::enforce text). Flagged for the user: that split-guard SPEC
+  dataset::enforce text). Flagged as open: that split-guard SPEC
   commit should be pushed/merged into tape or it will be lost; the local
   repo has no git remote configured at all.
   HARVEST DECISION (recorded here; ~/orderflow-lm is not pruned, nothing
@@ -1042,8 +1042,8 @@ way - with TEST unspent and available to a future model. See docs/CLAIM.md.
   NEW vs LOBSTER (BX's wide spreads leave room inside); formal re-measure
   in Phase 5.
 
-- 2026-07-31 ARCHITECTURE DECISION (user's, recorded verbatim in four
-  parts before any further work; resolves Blocked-on-you item 1).
+- 2026-07-31 ARCHITECTURE DECISION (recorded verbatim in four
+  parts before any further work; resolves Open-decisions item 1).
   (0a) OPTION (a) - grow n_ctx to span lag 100 - IS DEAD, and the binding
   constraint is DATA AVAILABILITY, not compute. At 94,246 tokens, one
   context window is ~5% of SPY's entire best day (1.88M tokens); across
@@ -1084,8 +1084,7 @@ way - with TEST unspent and available to a future model. See docs/CLAIM.md.
   eight representative values. Since the null column showed fat tails
   come from book mechanics plus empirical sizes, an LM that
   underperforms on the DISTRIBUTIONAL SANITY CHECKS may be losing to its
-  tokenizer rather than its modeling. Explicit caveat, in the user's
-  words: this is logged so the asymmetry can be REPORTED, not so a loss
+  tokenizer rather than its modeling. Explicit caveat: this is logged so the asymmetry can be REPORTED, not so a loss
   can be DISCOUNTED. It does not touch the two scored facts (flow
   memory, vol-clustering persistence), which do not depend on size
   resolution. If the LM loses on a SCORED fact, the size confound is not
@@ -1172,7 +1171,7 @@ way - with TEST unspent and available to a future model. See docs/CLAIM.md.
   The real stream is a fair UPPER BOUND on what any model on this
   tokenization can reach through this shim, and it does not clear the bar.
   NOT FIXED THIS SESSION, deliberately: every candidate repair changes what
-  the model emits or what the vocabulary means (see Blocked on you), and
+  the model emits or what the vocabulary means (see Open decisions), and
   that is a scope decision, not an implementation detail.
 
 - 2026-07-31 (Step 4, THE TRAINING KILLS ARE A RESOURCE PROBLEM, not a stop
@@ -1194,7 +1193,7 @@ way - with TEST unspent and available to a future model. See docs/CLAIM.md.
   it needs disk headroom - not a different venue. Per the instruction, the
   run was NOT restarted a fourth time.
 
-- 2026-07-31 (Step 7, SHIM REPAIR - Blocked-on-you item 5 decided, option
+- 2026-07-31 (Step 7, SHIM REPAIR - open item 5 decided, option
   (b), decided under an explicit "finish it") THE
   NEAREST-ACHIEVABLE-INDEX RULE. An ADD whose PRICE_OFF names an occupied
   level the book does not have now OPENS a level one tick beyond the
@@ -1248,8 +1247,8 @@ way - with TEST unspent and available to a future model. See docs/CLAIM.md.
   restart loop, and each attempt logs free disk so a resource kill is
   visible in the log rather than inferred.
 
-- 2026-08-02 PRICE_OFF RESOLUTION - KEEP THE 52-ID VOCAB (blocked-on-you
-  items 2 and 5, decided TOGETHER by the user as recommended, since both
+- 2026-08-02 PRICE_OFF RESOLUTION - KEEP THE 52-ID VOCAB (open
+  items 2 and 5, decided TOGETHER as recommended, since both
   are about PRICE_OFF resolution and one rebuild would have served both).
   Option (c) - the tokenizer change - is DECLINED. No vocab change, no
   manifest bump, no bin refit, no corpus rebuild, no retrain. The 88.4M
@@ -1299,7 +1298,7 @@ way - with TEST unspent and available to a future model. See docs/CLAIM.md.
   the BX-refit 52-id manifest.
 
 - 2026-08-02 SCORED-RUN BUDGET = 90 MINUTES (the open half of
-  blocked-on-you item 4, decided by the user). The scored model gets the
+  open item 4, now decided). The scored model gets the
   SAME budget as the budget run - 32,000 steps, ~1.9 epochs of the 88.4M
   corpus - not the 200k-step option. Consequence to state in the writeup:
   the headline table is produced by a deliberately small model on a fixed
@@ -1307,8 +1306,8 @@ way - with TEST unspent and available to a future model. See docs/CLAIM.md.
   architecture cannot do better; it is evidence about what this budget
   buys. Undertraining is a named, chosen limitation, not a discovered one.
 
-- 2026-08-02 THE SEALED TEST RUN IS AUTHORISED by the user, on
-  {20181228, 20200130} - the pair in src/dataset.hpp. The user's message
+- 2026-08-02 THE SEALED TEST RUN IS AUTHORISED, on
+  {20181228, 20200130} - the pair in src/dataset.hpp. The original note
   said "20191228", which is a SATURDAY and not a trading day; no such file
   exists in data/. Read as a typo for 20181228 and corrected here rather
   than silently. ORDERING, which the authorisation does not change: TEST
@@ -1318,7 +1317,7 @@ way - with TEST unspent and available to a future model. See docs/CLAIM.md.
   THE ONE CONDITION UNDER WHICH I STOP AND ASK ANYWAY: if the model's
   stream is NOT VIABLE at 32k steps, there is no LM column to compare and
   the TEST days would be unsealed for nothing - that is a different
-  situation from the one authorised, so it goes back to the user.
+  situation from the one authorised, so it needs a fresh decision.
 
 - 2026-08-03 KV CACHE for sampling (pylm/kvcache.py), and the SEMANTIC
   CHANGE it forces - logged because it changes what the model conditions
@@ -1389,7 +1388,7 @@ way - with TEST unspent and available to a future model. See docs/CLAIM.md.
   rather than ~4.2 h, but it is the same defect that lost the 100k-token
   run on 2026-08-02.
 
-- 2026-08-03 ALL 7 SEEDS IN ONE BATCH (--seeds), authorised by the user
+- 2026-08-03 ALL 7 SEEDS IN ONE BATCH (--seeds), authorised
   ("drop it to 1 hr"). At n_ctx=1 this model is dispatch-bound, so batch is
   nearly free (2.96 ms at B=8, 3.73 ms at B=56) while the uncached path
   scales linearly with it. 7 seeds x 8 streams therefore cost about what
@@ -1434,7 +1433,7 @@ way - with TEST unspent and available to a future model. See docs/CLAIM.md.
   NOTE FOR THE RECORD, because PLAN has blamed the machine four times: the
   machine WAS also in the documented bad state during this session (data
   volume 98% full / 5.2 GiB free, swap 4.16 of 5.12 GB used, and the
-  user's python3 -m edge.harness.run at 112% CPU). That state is real and
+  unrelated python3 -m edge.harness.run at 112% CPU). That state is real and
   still costs throughput - but it was NOT the cause of this kill, and
   attributing this one to it would have hidden an unbounded allocator
   leak. Boring explanation first, as the working rules say; this time the
@@ -1442,7 +1441,7 @@ way - with TEST unspent and available to a future model. See docs/CLAIM.md.
   MEASURED: 20,000 tokens x 56 streams in 1.5 min = 228 tok/s/stream,
   12,794 tok/s total, WHILE contending with the edge job. Projected 500k x
   56 = ~37 min, against ~18.6 h for 7 sequential uncached batch-8 runs
-  (~30x). The user's "1 hr" target is met with margin.
+  (~30x). The "1 hr" target is met with margin.
 
 - 2026-08-03 THE ENVIRONMENT MOVED UNDER US, twice, and both moves matter
   more than they look.
@@ -1537,7 +1536,7 @@ way - with TEST unspent and available to a future model. See docs/CLAIM.md.
   thing the seal protocol exists to prevent. TEST remains sealed.
 
 - 2026-08-03 SCORED FACT 2 IS DEMOTED to a documented limitation, and the
-  project finishes on the NEGATIVE RESULT (option (a), chosen by the user).
+  project finishes on the NEGATIVE RESULT (option (a)).
   This Decision names the 2026-07-30 RATIFICATION Decision that made
   tick-time volatility-clustering persistence the second scored fact, and
   states what changed and why, per that Decision's own protocol.
@@ -1566,7 +1565,7 @@ way - with TEST unspent and available to a future model. See docs/CLAIM.md.
   below; kept because the reasoning it contains is still the standard any
   future reframe has to meet)
   REFRAMED AS A BENCHMARK (docs/BENCHMARK.md, README.repo.md),
-  decided by the user AFTER the negative result. Logged with that ordering
+  decided AFTER the negative result. Logged with that ordering
   stated explicitly, because reframing a failed modelling project as a
   benchmark is exactly how a negative result gets laundered into a
   deliverable, and the only defence is that the record says when the
@@ -1593,8 +1592,7 @@ way - with TEST unspent and available to a future model. See docs/CLAIM.md.
   day scale). Every viability number this project recorded before today
   violated that rule.
 
-- 2026-08-03 BENCHMARK FRAMING WITHDRAWN, same day, at the user's
-  direction: the docs now present the project as what it is - a failed
+- 2026-08-03 BENCHMARK FRAMING WITHDRAWN, same day: the docs now present the project as what it is - a failed
   attempt with a well-characterised failure and a reusable apparatus -
   rather than as a benchmark with one failing entry.
   WHY THIS IS THE BETTER CALL, and it is not merely cosmetic: the
@@ -1619,15 +1617,15 @@ way - with TEST unspent and available to a future model. See docs/CLAIM.md.
   tidied is not an audit trail. Two mechanism claims retracted earlier
   today remain legible in RESULTS.md as corrections naming their originals.
 
-## Blocked on you
-Updated 2026-07-31. Each item states specifically what it needs from you.
-1. ARCHITECTURE vs THE CONTEXT GATE - RESOLVED 2026-07-31 by the user:
+## Open decisions
+Updated 2026-07-31. Each item states specifically what it is waiting on.
+1. ARCHITECTURE vs THE CONTEXT GATE - RESOLVED 2026-07-31:
    option (a) dead on data availability, option (c) chosen (train at
    n_ctx=320), book-state-feedback hypothesis + pre-registered lag
    prediction recorded, size confound quantified. Full text: the
    2026-07-31 ARCHITECTURE DECISION entry above.
 1b. THE TRAINING RUN HAS NOW BEEN KILLED THREE TIMES - and the cause is
-   DIAGNOSED, so this is no longer a question about your intent. The
+   DIAGNOSED, so this is no longer a question of intent. The
    third attempt (launched double-forked into its own session under
    caffeinate, so teardown and sleep are ruled out) died at step 7,600
    of 32,000 with a SIGKILL signature. At the kill: 16 GiB RAM, 3.55 of
@@ -1636,8 +1634,7 @@ Updated 2026-07-31. Each item states specifically what it needs from you.
    holding multi-GB RSS. jetsam takes the largest resident process,
    which is the trainer holding the 88.4M-token corpus. The same
    conditions fit both earlier stops (each landed during heavy
-   corpus-build ingests on a near-full disk). Per your instruction it
-   was NOT restarted a fourth time then. UPDATED later the same day, and
+   corpus-build ingests on a near-full disk). It was deliberately NOT restarted a fourth time then. UPDATED later the same day, and
    this is the actionable part: the pressure is NOT mainly this
    project's ingests. A process listing during the fourth attempt caught
    two UNRELATED heavy jobs of yours saturating the machine -
@@ -1651,12 +1648,11 @@ Updated 2026-07-31. Each item states specifically what it needs from you.
    support now exists (train_corpus.py --resume carries optimizer,
    scheduler and RNG state), and the supervisor caps restarts at 6, so a
    kill now costs one checkpoint interval rather than the whole run.
-2. INSIDE-SPREAD BUCKET GRANULARITY - RESOLVED 2026-08-02 by the user,
-   jointly with item 5: KEEP THE 52-ID VOCAB. The 20.9% inside-spread
+2. INSIDE-SPREAD BUCKET GRANULARITY - RESOLVED 2026-08-02, jointly with item 5: KEEP THE 52-ID VOCAB. The 20.9% inside-spread
    collapse into the single -1 bucket is accepted and becomes a stated
    limitation of the claim, not an open question. Full text: the
    2026-08-02 PRICE_OFF RESOLUTION Decision above.
-3. TAPE REPO DIVERGENCE - RESOLVED 2026-07-31 by the user: local HEAD
+3. TAPE REPO DIVERGENCE - RESOLVED 2026-07-31: local HEAD
    (d8b15cc, the split-guard SPEC commit) pushed to daltonoscar0/tape as
    branch `split-guard-spec`, origin now configured in ~/orderflow-lm.
    The data-loss risk is gone. Residual (optional): the branch is not
@@ -1665,14 +1661,13 @@ Updated 2026-07-31. Each item states specifically what it needs from you.
    split-guard SPEC text is simplest to cherry-pick/apply onto tape's
    pipeline/SPEC.md when convenient.
 4. REAL TRAINING RUN BUDGET - FULLY RESOLVED. The remaining half (the
-   SCORED run's budget) settled 2026-08-02 by the user: 90 minutes /
+   SCORED run's budget) settled 2026-08-02: 90 minutes /
    32,000 steps, same as the budget run. Full text: the 2026-08-02
    SCORED-RUN BUDGET Decision above. Original text follows.
-   PARTIALLY RESOLVED 2026-07-31: you asked
-   me to establish it rather than guess; established (RESULTS.md Step 3a:
+   PARTIALLY RESOLVED 2026-07-31: established rather than guessed (RESULTS.md Step 3a:
    MPS ~6.4 steps/s realized, 90 min = ~32k steps ~= 1.9 epochs of the
    88.4M-token corpus). What remains is item 1b: an uninterrupted window
-   to actually run it, and - for the SCORED run later - your call on
+   to actually run it, and - for the SCORED run later - a call on
    whether 90 minutes is also the budget for the real model or whether
    it gets longer (200k steps = ~5.6h bench-rate, ~8.7h realized-rate).
 
@@ -1680,7 +1675,7 @@ Updated 2026-07-31. Each item states specifically what it needs from you.
    the implementer under an explicit "finish it": option (b) implemented, and the
    real stream is now VIABLE on all 6 TRAIN days (see the Step 7
    Decision). Part two - the surviving INTERIOR AMBIGUITY - RESOLVED
-   2026-08-02 by the user jointly with item 2: option (c) declined, the
+   2026-08-02 jointly with item 2: option (c) declined, the
    52-id vocab stands, and the 9.40% mis-placement becomes a stated
    limitation. Full text: the 2026-08-02 PRICE_OFF RESOLUTION Decision.
    The original finding is kept below for the record.
@@ -1704,7 +1699,7 @@ Updated 2026-07-31. Each item states specifically what it needs from you.
    real token stream - a fair upper bound, since sample.py feeds the
    model NO book state - fails viability warm-started because of this.
    I did NOT fix it: every candidate repair changes what the model emits
-   or what the vocabulary means, which is your call, not an
+   or what the vocabulary means, which is a judgment call, not an
    implementation detail. The options as I see them, with what each
    costs:
    (a) DO NOTHING and report the ceiling. Cheapest, honest, and the
@@ -1724,8 +1719,8 @@ Updated 2026-07-31. Each item states specifically what it needs from you.
        item 2 below (inside-spread granularity) and they should be
        decided together, since both are about PRICE_OFF resolution and
        one rebuild could serve both.
-   My recommendation if you want one: decide 2 and 5 together, and if
-   you are rebuilding the corpus anyway, take (c). If you are not, take
+   Recommendation: decide 2 and 5 together, and if
+   the corpus is being rebuilt anyway, take (c). Otherwise take
    (b) plus an explicit re-labelling note rather than (a), because (b)
    is cheap and the ceiling it removes is large.
 
@@ -1935,7 +1930,7 @@ Resolved earlier 2026-07-30 (kept for the record):
   existing out/multiday summaries (no raw data touched, TEST sealed);
   RESULTS.md row + Decisions finding: n_ctx=320 cannot express the scored
   fact (median factor 294.5x; lag 1 alone typically exceeds the context).
-  Architecture decision left to the user. Gates green (0 warnings / ctest /
+  Architecture decision left open. Gates green (0 warnings / ctest /
   1M fuzz).
 - 2026-07-30 Phase 2: docs/CLAIM.md written - the narrow defensible claim
   with every qualifier cited to its RESULTS.md row / PLAN Decision (venue,
@@ -2002,7 +1997,7 @@ Resolved earlier 2026-07-30 (kept for the record):
   in [-1,+10], UNK 0%); the single -1 bucket does NOT match BX reality -
   20.9% of events price inside the (wide) spread. Two findings reported,
   nothing changed silently: degenerate 1-share size buckets on a
-  round-lot venue; -1 bucket granularity (vocab change = user's call).
+  round-lot venue; -1 bucket granularity (vocab change = a judgment call).
   Frozen bins in out/tokens/manifest.json. Gates green.
 - 2026-07-30 Phase 6 (pilot, PIPELINE TEST - not a model): tape's minigpt
   + train_spy consumed this repo's BX OFTK tokens UNCHANGED (SPY 20190130,
@@ -2017,7 +2012,7 @@ Resolved earlier 2026-07-30 (kept for the record):
   Gates green.
 - 2026-07-30 Phase 8: cold-resume state written - Status now describes the
   built-vs-missing split for a memoryless reader, Next 3 tasks reordered
-  around the architecture gate, Blocked-on-you lists 4 items each naming
+  around the architecture gate, Open-decisions lists 4 items each naming
   specifically what it needs (architecture vs context gate; -1 bucket
   granularity; the unpushed local tape SPEC commit; training-run budget).
   Session ran phases 1-8 with 7 phase commits + 1 review-fix commit; the
@@ -2090,6 +2085,6 @@ Resolved earlier 2026-07-30 (kept for the record):
   headline fact (no viable stream yet; the 90-minute-scale question is
   UNANSWERED because the budget run was stopped twice; the sealed run
   must not be scheduled until viability passes and the sweep has run);
-  Blocked-on-you updated (architecture resolved, training-window item
+  Open-decisions updated (architecture resolved, training-window item
   1b added, budget item partially resolved). Session: Steps 0/1/2/3
   committed, Step 4 blocked by its own gate. TEST never read.
