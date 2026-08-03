@@ -781,7 +781,7 @@ way - with TEST unspent and available to a future model. See docs/CLAIM.md.
   fact - and what changed post-hoc was only WHICH lag is treated as
   load-bearing. Both halves of that sentence matter: the statistic was
   pre-specified, and the emphasis within it was outcome-dependent.
-  Aggregation into the fact-level verdict (implementation call, Claude's,
+  Aggregation into the fact-level verdict (implementation call,
   logged for veto): the persistence fact's PASS rests on the lag-100 beat
   count (the lag the null comparison predicts separates), with the lag-10
   beat count reported alongside and interpreted via 2b - lag-10
@@ -953,8 +953,8 @@ way - with TEST unspent and available to a future model. See docs/CLAIM.md.
 - 2026-07-30 (tape reconciliation) DETERMINATION: ~/orderflow-lm and
   github.com/daltonoscar0/tape ARE the same codebase. Evidence: local root
   commit b2395b8 and remote fd8ac22 share author, message, and author
-  timestamp (2026-07-30T18:14:40Z) with blob-identical trees except a
-  CLAUDE.md->NOTES.md rename (same blob) and a dropped .claude/ rules file
+  timestamp (2026-07-30T18:14:40Z) with blob-identical trees except an
+  agent-instructions file rename (same blob) and a dropped tool-config dir
   - i.e. a sanitized re-push; tape then subtree-merged that tree under
   pipeline/. They have DIVERGED since: the remote is 3 commits newer
   (adds the LM/probing suite, the SPY train+probe run, README - through
@@ -1195,7 +1195,7 @@ way - with TEST unspent and available to a future model. See docs/CLAIM.md.
   run was NOT restarted a fourth time.
 
 - 2026-07-31 (Step 7, SHIM REPAIR - Blocked-on-you item 5 decided, option
-  (b), Claude's call under an explicit "finish it") THE
+  (b), decided under an explicit "finish it") THE
   NEAREST-ACHIEVABLE-INDEX RULE. An ADD whose PRICE_OFF names an occupied
   level the book does not have now OPENS a level one tick beyond the
   deepest one (index L, the nearest the book can offer) instead of
@@ -1223,7 +1223,7 @@ way - with TEST unspent and available to a future model. See docs/CLAIM.md.
   AND fixes the inflation (99.90% applied, book end 506 orders, drift
   +0.62). The boring explanation beat the elegant one, again.
   TWO TESTS WERE REWRITTEN, logged here as deliberate behaviour changes
-  rather than edits to green (CLAUDE.md requires this): the old cases
+  rather than edits to green (WORKING_RULES.md requires this): the old cases
   pinned "deep-index add rejects" and "any absent-level cancel relocates",
   which are precisely the behaviours this change alters. They now pin the
   new invariants, including an ANTI-RATCHET property test (deep-index adds
@@ -1282,7 +1282,7 @@ way - with TEST unspent and available to a future model. See docs/CLAIM.md.
 
 - 2026-08-02 THE TAPE IMPORT PATH WAS A TIME BOMB, and it went off. Both
   train_corpus.py and sample.py imported the `tape` package from a
-  PER-SESSION scratchpad path under /private/tmp/claude-501/<session-uuid>/.
+  PER-SESSION scratchpad path under /private/tmp/<session-scratchpad>/.
   That directory is wiped between sessions, so the resume died instantly
   on ModuleNotFoundError - nothing to do with memory pressure, and it
   would have broken EVERY future training and sampling run. Repointed at
@@ -1677,7 +1677,7 @@ Updated 2026-07-31. Each item states specifically what it needs from you.
    it gets longer (200k steps = ~5.6h bench-rate, ~8.7h realized-rate).
 
 5. THE SHIM'S PRICE_OFF INVERSE - FULLY RESOLVED. Part one 2026-07-31 by
-   Claude under an explicit "finish it": option (b) implemented, and the
+   the implementer under an explicit "finish it": option (b) implemented, and the
    real stream is now VIABLE on all 6 TRAIN days (see the Step 7
    Decision). Part two - the surviving INTERIOR AMBIGUITY - RESOLVED
    2026-08-02 by the user jointly with item 2: option (c) declined, the
@@ -1776,7 +1776,7 @@ Resolved earlier 2026-07-30 (kept for the record):
   earlier session and orphaned; no partial rewrite survived on disk
   (working tree clean, nothing in stash/reflog), so nothing to revert.
   Deferred until the code is structurally stable (post-match(), post-
-  Phase 2 adapter). Do not resurrect it before then. CLAUDE.md created at
+  Phase 2 adapter). Do not resurrect it before then. WORKING_RULES.md created at
   repo root so the working rules are version-controlled, not session memory.
 - 2026-07-30 Step 2 corrections: tick-time |r| ACF (2a: volatility
   clustering partially survives - real on ~half the panel, absent on 6/20;

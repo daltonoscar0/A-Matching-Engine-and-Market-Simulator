@@ -33,10 +33,10 @@ slip by.
   rejects and exact share conservation. Any reject on real data is our bug.
 
 ## Decision authority
-Claude decides implementation details autonomously and logs non-obvious
-calls in PLAN.md Decisions (dated, with rationale). Stop and ask only for:
-scope changes, destructive/irreversible actions, or anything that would
-change what claim the project can honestly make.
+Implementation details are decided autonomously; non-obvious calls are
+logged in PLAN.md Decisions (dated, with rationale). Stop and ask only
+for: scope changes, destructive/irreversible actions, or anything that
+would change what claim the project can honestly make.
 
 ## Data
 data/ holds real NASDAQ BX ITCH days (~400MB-1.6GB each), gitignored —
