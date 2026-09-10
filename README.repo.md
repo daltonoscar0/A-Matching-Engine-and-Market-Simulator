@@ -7,7 +7,7 @@ flow, validated against real NASDAQ BX data.
 no headline result. What's here is a working exchange engine, a validated
 measurement pipeline, a memoryless baseline, and a well-documented failure.
 
-**Start here: [`docs/POSTMORTEM.md`](docs/POSTMORTEM.md)** — what was tried,
+**Start here: [`docs/POSTMORTEM.md`](docs/POSTMORTEM.md)**, what was tried,
 what failed, what I got wrong, and what I'd try next.
 
 ## The result, in one table
@@ -27,16 +27,16 @@ longer it runs.
 
 ## What works and is reusable
 
-- **Exchange engine** — price-time priority book + matching. Two full days of
+- **Exchange engine**, price-time priority book + matching. Two full days of
   real ITCH replayed with zero rejects, exact share conservation, books
   draining to zero at the close (23.8M and 109.7M messages). Fuzz-tested at 1M
   messages against a shadow book.
-- **Measurement pipeline** — stylized facts (fat tails, volatility clustering,
+- **Measurement pipeline**, stylized facts (fat tails, volatility clustering,
   flow-sign memory, Hill) per symbol, with a rule that refuses degenerate
   estimates.
-- **Memoryless null** — Cont-Stoikov-Talreja calibrated on real data, the floor
+- **Memoryless null**, Cont-Stoikov-Talreja calibrated on real data, the floor
   a real model has to beat.
-- **Tokenizer round-trip** — real ITCH to factored tokens and back,
+- **Tokenizer round-trip**, real ITCH to factored tokens and back,
   mutation-tested.
 - **Two sealed held-out days**, never read.
 
@@ -65,7 +65,7 @@ at `third_party/catch.hpp`. Standard library + POSIX only.
         --warm-start SPY_0930.book --why
 
 Viability must be measured at day scale (~1.07M tokens). Shorter streams
-flatter a bad model badly — at 50k tokens this model is nearly
+flatter a bad model badly, at 50k tokens this model is nearly
 indistinguishable from real data.
 
 ## Layout
@@ -97,10 +97,10 @@ indistinguishable from real data.
 
 ## The record
 
-- [`docs/POSTMORTEM.md`](docs/POSTMORTEM.md) — what failed and why
-- [`docs/CLAIM.md`](docs/CLAIM.md) — exactly what is and is not claimed
-- `PLAN.md` — phases, dated Decisions, session log. Source of truth.
-- `RESULTS.md`, `BENCH.md` — append-only measurement logs. Corrections get a
+- [`docs/POSTMORTEM.md`](docs/POSTMORTEM.md), what failed and why
+- [`docs/CLAIM.md`](docs/CLAIM.md), exactly what is and is not claimed
+- `PLAN.md`, phases, dated Decisions, session log. Source of truth.
+- `RESULTS.md`, `BENCH.md`, append-only measurement logs. Corrections get a
   new row naming the old one; nothing is edited away, including two mechanism
   claims I asserted and then retracted.
 

@@ -1,4 +1,4 @@
-# Exchange — working rules
+# Exchange, working rules
 
 Matching engine + generative order-flow project. PLAN.md is the source of
 truth for phases, decisions, and the session log. Read it first.
@@ -14,7 +14,7 @@ Zero external dependencies. The single exception is Catch2 v2.13.10,
 vendored at third_party/catch.hpp. Do not add libraries, package managers,
 or FetchContent. Standard library + POSIX only.
 
-## Gates — all three green before EVERY commit
+## Gates, all three green before EVERY commit
 1. Zero-warning build: `cmake --build build` clean under -Wall -Wextra.
 2. `ctest --test-dir build` passes.
 3. Fuzz at full depth: `FUZZ_N=1000000 ./build/tests "fuzz*"` passes.
@@ -39,6 +39,6 @@ for: scope changes, destructive/irreversible actions, or anything that
 would change what claim the project can honestly make.
 
 ## Data
-data/ holds real NASDAQ BX ITCH days (~400MB-1.6GB each), gitignored —
+data/ holds real NASDAQ BX ITCH days (~400MB-1.6GB each), gitignored -
 keep it that way. Verify downloads with `gzip -t` (the .md5sum sidecars
 404). Always `curl -f` so HTTP errors don't get saved as files.

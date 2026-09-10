@@ -4,7 +4,7 @@ Status: AUDIT (2026-07-30). No tokenizer code is changed by this
 document. The deliverable is the per-item scope verdict so the direction can
 be chosen deliberately, not discovered mid-implementation.
 
-**Update 2026-07-30: the `U` fork is RESOLVED — EXPAND to Delete+Add**
+**Update 2026-07-30: the `U` fork is RESOLVED, EXPAND to Delete+Add**
 (decision recorded in PLAN.md Decisions with the replace-atomicity
 caveat and the post-hoc replace-atomicity-rate sanity check). Do not reopen;
 revisit `TYPE_REPLACE` with a six-field tuple only if replace-timing fidelity
@@ -23,8 +23,8 @@ input representation is therefore aimed at a format we no longer produce.
 
 The headline finding, stated first: **the factored tokenizer scheme survives
 the move with no vocabulary redesign.** Its two most format-sensitive choices
-already insulate it — price is a level *index* (not an absolute price or a
-fixed grid), and order-reference identity is *dropped* — which are exactly the
+already insulate it, price is a level *index* (not an absolute price or a
+fixed grid), and order-reference identity is *dropped*, which are exactly the
 two places ITCH diverges hardest from LOBSTER. The real work is (1) a new
 ITCH-driving adapter that feeds `ApproxEvent`s from the exchange's validated
 reconstruction, (2) refitting the frozen SIZE/DT bins on BX TRAIN data (a
@@ -49,7 +49,7 @@ disjoint ID ranges per field: `[TYPE][SIDE][PRICE_OFF][SIZE][DT]`. Full vocab
 Contract (mirrors Scalpel): encode is a pure application of frozen bins,
 decode emits a representative event, `roundtrip_ok()` (tokens -> approx event
 -> same tokens) is the shared inverse check. Order-reference identity is
-explicitly dropped in v1 — two events with equal factored fields are
+explicitly dropped in v1, two events with equal factored fields are
 indistinguishable, so cancels/executions are not linked to the add they
 consume. Book state for PRICE_OFF comes from LOBSTER's orderbook file
 (SPEC Decision A), NOT from reconstruction, for LOBSTER data.
@@ -59,7 +59,7 @@ consume. Book state for PRICE_OFF comes from LOBSTER's orderbook file
 | LOBSTER (MsgType) | ITCH | relationship | verdict |
 |---|---|---|---|
 | Add (1) | `A` | direct; both are a new visible limit order | **adapter bridges** (parse A -> Add event) |
-| Add (1) | `F` (add + MPID attribution) | `F` = `A` plus a 4-char market-participant id LOBSTER has no field for | **adapter bridges**: map `F` -> Add, drop attribution (already outside the vocab). Preserving the attributed/unattributed distinction would be a *new TYPE token* + retrain — recommend against. |
+| Add (1) | `F` (add + MPID attribution) | `F` = `A` plus a 4-char market-participant id LOBSTER has no field for | **adapter bridges**: map `F` -> Add, drop attribution (already outside the vocab). Preserving the attributed/unattributed distinction would be a *new TYPE token* + retrain, recommend against. |
 | PartialCancel (2) | `X` (partial cancel) | direct size reduction | **adapter bridges** |
 | Delete (3) | `D` (full delete) | direct full removal | **adapter bridges** |
 | ExecVisible (4) | `E` (exec by ref) | direct execution against a resting displayed order | **adapter bridges** |
@@ -67,9 +67,9 @@ consume. Book state for PRICE_OFF comes from LOBSTER's orderbook file
 | ExecHidden (5) | `P` (non-cross trade, non-displayed) | both are executions that do not touch the visible book | **adapter bridges**: the exchange already SKIPS `P` (book-unaffected); to emit an ExecHidden token, surface the skip instead of dropping it. Optional. |
 | CrossTrade (6) | `Q` (cross trade) | auction / cross print | **adapter bridges**, but MOOT on BX: the panel days carry **zero** `Q` frames. |
 | Halt (7) | `H` (trading action) | halt/resume indicator; book-unaffected | **adapter bridges**: HALT/RESUME are specials, not tuples. The exchange currently SKIPS `H`; to tokenize halts, stop skipping and forward the action code. |
-| — | **`U` (replace)** | **no LOBSTER equivalent.** ITCH sends one message carrying `orig_ref` + `new_ref` + new size/price; LOBSTER represents the same economic act as two rows (Delete then Add) | **RESOLVED 2026-07-30: expand to Delete+Add — see below.** |
+|, | **`U` (replace)** | **no LOBSTER equivalent.** ITCH sends one message carrying `orig_ref` + `new_ref` + new size/price; LOBSTER represents the same economic act as two rows (Delete then Add) | **RESOLVED 2026-07-30: expand to Delete+Add, see below.** |
 
-### The `U` fork (a representation choice with a distributional consequence) — RESOLVED 2026-07-30: EXPAND to Delete+Add
+### The `U` fork (a representation choice with a distributional consequence), RESOLVED 2026-07-30: EXPAND to Delete+Add
 
 ITCH `U` has no LOBSTER analogue and no token slot, and expanding it changes
 **what the model can express**, not just how it is encoded, so the trade-off
@@ -80,7 +80,7 @@ is quantified here before a recommendation.
 volatile 2019-05-30, 6.5% on 2019-12-30). Note this is about **half** the
 "~12%" figure quoted in the task. Provenance corrected 2026-07-30: that ~12%
 was the **synthetic generator's message mix** (U 12% in BENCH.md's 2026-07-27
-synthetic-stream row) — a fact about our generator's hardcoded ratios, never
+synthetic-stream row), a fact about our generator's hardcoded ratios, never
 about real BX; this doc's earlier guess that it matched the post-expansion
 number below was wrong. 5.9% (measured, replay_itch, 3 TRAIN days) is the
 real-data figure.
@@ -145,11 +145,11 @@ pre-registration's sanity-check list, explicitly not a scoring criterion.
 
 ## Per-item audit (the five things asked about)
 
-### 1. Prices — **unchanged scheme; input source changes; bins re-measured**
+### 1. Prices, **unchanged scheme; input source changes; bins re-measured**
 
 The tokenizer does **not** tokenize absolute price at all. PRICE_OFF is the
 signed *occupied-level index* on the event's side. So the ITCH facts that look
-threatening — `uint32` at 1e-4, whole-penny grid, sub-penny on sub-$1 names —
+threatening, `uint32` at 1e-4, whole-penny grid, sub-penny on sub-$1 names -
 never reach the vocabulary. There is no integer-cents assumption and no fixed
 price grid to break (that assumption was *removed* in v2, which replaced tick
 offsets with level indices precisely because tick offsets are
@@ -170,10 +170,10 @@ Caveats, both re-measurement not redesign:
   re-measured on BX** before the window is trusted. This is a bin/window refit,
   logged as a retraining decision, not a vocab change.
 
-### 2. Order references — **unchanged (already dropped)**
+### 2. Order references, **unchanged (already dropped)**
 
 The tokenizer embeds **no** order identifiers; ref identity is dropped in v1.
-So ITCH's 64-bit sparse refs pose no unbounded-vocabulary problem — the
+So ITCH's 64-bit sparse refs pose no unbounded-vocabulary problem, the
 concern the task raises simply does not apply to this design. Refs *are*
 needed to link E/C/X/D/U to the standing order they modify, but that linkage
 happens in the **exchange's reconstruction**, which already handles 64-bit
@@ -181,7 +181,7 @@ refs natively and pointer-stably. Net: refs are consumed by the engine,
 invisible to the tokenizer. The cost is the pre-existing v1 limitation
 (cancels/execs unlinked in the token stream), unchanged by the format move.
 
-### 3. Timestamps / inter-arrival — **unchanged units; DT bins refit**
+### 3. Timestamps / inter-arrival, **unchanged units; DT bins refit**
 
 DT is a per-event inter-arrival delta, log-bucketed (14 bins + zero + tail),
 fit per ticker. LOBSTER `time_ns` and ITCH's 48-bit ns-since-midnight are the
@@ -193,15 +193,15 @@ exchange's merged multi-symbol stream is not timestamp-monotonic *across*
 symbols, but the tokenizer is per-symbol and each symbol's substream is
 monotonic, so no conflict.
 
-### 4. Size — **unchanged scheme; bins refit**
+### 4. Size, **unchanged scheme; bins refit**
 
 `uint32` ITCH shares vs `int64` LOBSTER size, same concept. The 8 quantile
 buckets are frozen from TRAIN; BX has strong round-lot structure (48.5%
-exactly 100, 91.5% multiples of 100 — RESULTS.md) very different from SPY's
+exactly 100, 91.5% multiples of 100, RESULTS.md) very different from SPY's
 edges, so the SIZE edges **must be refit on BX TRAIN** (retraining decision,
 not a code change).
 
-### 5. Specials / boundaries — **mostly unchanged**
+### 5. Specials / boundaries, **mostly unchanged**
 
 BOS/EOS/SESSION_OPEN/SESSION_CLOSE are format-agnostic. HALT/RESUME require
 the ingest to stop skipping ITCH `H` and forward the action code (optional).
@@ -222,9 +222,9 @@ No cross-day boundaries either way.
 | TYPE vocab for `U` | **RESOLVED 2026-07-30**: expand to Delete+Add (no vocab change; PLAN.md Decisions) |
 | Book-state source for PRICE_OFF | **new adapter**: feed exchange reconstruction instead of a LOBSTER orderbook file |
 | ITCH binary parse -> `ApproxEvent` | **new code** (parser/adapter), NOT a tokenizer rewrite |
-| Any model already trained on LOBSTER-SPY | **does not transfer**: different venue, refit bins, single-ticker SPY corpus — a BX corpus is a fresh training run |
+| Any model already trained on LOBSTER-SPY | **does not transfer**: different venue, refit bins, single-ticker SPY corpus, a BX corpus is a fresh training run |
 
-**Does the tokenizer survive? Yes — no redesign.** The bounded scope is: an
+**Does the tokenizer survive? Yes, no redesign.** The bounded scope is: an
 ITCH-driving adapter (parse BX -> drive reconstruction -> emit
 `[TYPE][SIDE][PRICE_OFF][SIZE][DT]` with PRICE_OFF from the reconstructed
 book, `U` expanded to Delete+Add), plus a refit of the frozen SIZE/DT bins and
