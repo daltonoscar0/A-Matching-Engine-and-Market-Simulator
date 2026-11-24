@@ -1,0 +1,46 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compiler version
+        run: g++ --version
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      # Builds exchange_core, the Catch2 test binary, the tools and the bench
+      # executables. No external dependencies: Catch2 is vendored as a single
+      # header in third_party/.
+      - name: Build
+        run: cmake --build build -j
+
+      # The single ctest target, unit_and_fuzz, covers the Catch2 property
+      # tests plus the randomized fuzzer against a shadow book. The fuzzer
+      # defaults to 200k messages; FUZZ_N raises it.
+      - name: Run tests
+        run: ctest --test-dir build --output-on-failure
+
+      # pylm/test_kvcache.py is NOT run here. It needs torch, and it imports
+      # `tape` from a hardcoded absolute path:
+      #     sys.path.insert(0, "/Users/oscardalton/tape")
+      # which exists only on the author's machine, so the gate cannot run on
+      # any other checkout. The module it wants is tape/model_loader.py in
+      # daltonoscar0/Interpretability-of-Market-Language-Models. Making this
+      # runnable means replacing that path with something relative or
+      # installable, which is a code change rather than a CI change.
+
+      # The benchmarks are built above but deliberately not timed here. A
+      # shared CI runner cannot produce a throughput or tail-latency number
+      # worth putting in BENCH.md, and recording one would make that log
+      # misleading. They are run by hand on known hardware instead.
+      - name: Benchmarks build only (not timed in CI)
+        run: ls -1 build/bench_gen build/bench_replay build/bench_tail build/bench_match build/bench_adapter build/replay_itch
